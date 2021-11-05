@@ -17,7 +17,7 @@ class ODST(ModuleWithInit):
                  initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_,
                  threshold_init_beta=1.0, threshold_init_cutoff=1.0,
-                 colsample_bytree=1.,
+                 colsample_bytree=1., **kwargs
                  ):
         """
         Oblivious Differentiable Sparsemax Trees. http://tinyurl.com/odst-readmore

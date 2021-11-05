@@ -122,42 +122,21 @@ def get_args():
                              'and finished')
 
     temp_args, _ = parser.parse_known_args()
-    if temp_args.name == 'debug':
-        temp_args.arch = 'GAM'
+    # Remove stuff if in debug mode
+    if temp_args.name.startswith('debug'):
+        clean_up(temp_args.name)
 
-    parser = getattr(lib.arch, temp_args.arch + 'Block').add_model_specific_args(parser)
+    # Load previous hparams arch
+    prev_hparams = load_from_prev_hparams(temp_args)
+    if prev_hparams is not None and all([not arg.startswith('--arch') for arg in sys.argv]):
+        temp_args.arch = prev_hparams['arch']
+    parser = eval(temp_args.arch).add_model_specific_args(parser)
     args = parser.parse_args()
 
-    if args.name.startswith('debug'):
-        print("WATCHOUT!!! YOU ARE RUNNING IN TEST RUN MODE!!!")
-        if pexists('./logs/%s' % args.name):
-            shutil.rmtree('./logs/%s' % args.name, ignore_errors=True)
-        if pexists('./logs/hparams/%s' % args.name):
-            os.remove('./logs/hparams/%s' % args.name)
-
-    hparams = None
-    if pexists(pjoin('logs', 'hparams', args.name)):
-        hparams = json.load(open(pjoin('logs', 'hparams', args.name)))
-    elif pexists(pjoin('logs', args.name, 'hparams.json')):
-        hparams = json.load(open(pjoin('logs', args.name, 'hparams.json')))
-    elif args.load_from_hparams is not None:
-        hparams = json.load(open(pjoin('logs', 'hparams', args.load_from_hparams)))
-    elif args.load_from_pretrain is not None:
-        assert pexists(pjoin('logs', args.load_from_pretrain, 'MY_IS_FINISHED'))
-        hparams = json.load(open(pjoin('logs', 'hparams', args.load_from_pretrain)))
-
-    # Remove default value. Only parse user inputs
-    for action in parser._actions:
-        action.default = argparse.SUPPRESS
-    user_hparams = vars(parser.parse_args())
-
-    if hparams is not None:
-        cur_hparams = vars(args)
-
-        # Update hparams from the previous hparams except user-specified one
-        print('Reload and update from inputs: ' + str(user_hparams))
-        cur_hparams.update({k: v for k, v in hparams.items() if k not in user_hparams})
-        args = argparse.Namespace(**cur_hparams)
+    # If loading previous hparams, update prev hparams with user inputs
+    user_hparams = load_user_hparams(parser)
+    if prev_hparams is not None:
+        update_args(args, user_hparams, prev_hparams)
 
     # on v server
     if not pexists(pjoin('logs', args.name)) \
@@ -177,7 +156,143 @@ def get_args():
     return args, user_hparams
 
 
-def main(args) -> None:
+def load_from_prev_hparams(args):
+    hparams = None
+    if pexists(pjoin('logs', 'hparams', args.name)):
+        with open(pjoin('logs', 'hparams', args.name)) as fp:
+            hparams = json.load(fp)
+    elif args.load_from_hparams is not None:
+        path = args.load_from_hparams
+        if '/' not in args.load_from_hparams:
+            path = pjoin('logs', 'hparams', args.load_from_hparams)
+        with open(path) as fp:
+            hparams = json.load(fp)
+    elif args.load_from_pretrain is not None:
+        assert pexists(pjoin('logs', args.load_from_pretrain, 'MY_IS_FINISHED'))
+        hparams = json.load(open(pjoin('logs', 'hparams', args.load_from_pretrain)))
+    return hparams
+
+
+def load_user_hparams(parser):
+    for action in parser._actions:
+        action.default = argparse.SUPPRESS
+    return vars(parser.parse_args())
+
+
+def clean_up(name):
+    shutil.rmtree(pjoin('logs', name), ignore_errors=True)
+    shutil.rmtree(pjoin('lightning_logs', name), ignore_errors=True)
+    if pexists(pjoin('logs', 'hparams', name)):
+        os.remove(pjoin('logs', 'hparams', name))
+
+
+def update_args(args, user_hparams, prev_hparams):
+    for k, v in prev_hparams.items():
+        if k not in user_hparams:
+            setattr(args, k, v)
+
+
+def main():
+    args, user_hparams = get_args()
+
+    if args.random_search == 0:
+        try:
+            train(args)
+        finally:
+            if pexists(pjoin('is_running', args.name)): # release it
+                os.remove(pjoin('is_running', args.name))
+
+        def run_pretrain_cmd(args):
+            if pexists(pjoin('logs', args.name, 'MY_IS_FINISHED')):
+                print(f'{args.name} already finishes!')
+                return
+            train(args)
+
+        if args.pretrain:
+            orig_name = args.load_from_pretrain = args.name
+            args.pretrain = 0
+
+            flrs = args.finetune_lr if args.finetune_lr is not None else [args.lr]
+            frss = args.finetune_freeze_steps \
+                if args.finetune_freeze_steps is not None \
+                else [args.freeze_steps]
+            fdss = args.finetune_data_subsample \
+                if args.finetune_data_subsample is not None \
+                else [args.data_subsample]
+
+            print(f'Sending lr={flrs} freeze_steps={frss} data_subsample={fdss}')
+            if args.finetune_zip:
+                assert len(flrs) == len(frss) == len(fdss), 'Lengths are not equal!'
+                for flr, frs, fds in zip(flrs, frss, fdss):
+                    args.lr = flr
+                    args.freeze_steps = frs
+                    args.data_subsample = fds
+                    args.name = orig_name + f'_fds{fds}_flr{flr}_frs{frs}_ft'
+                    run_pretrain_cmd(args)
+
+            for flr in flrs:
+                args.lr = flr
+                for frs in frss:
+                    args.freeze_steps = frs
+                    for fds in fdss:
+                        args.data_subsample = fds
+                        # Change name coorespondingly
+                        args.name = orig_name + f'_fds{fds}_flr{flr}_frs{frs}_ft'
+
+                        run_pretrain_cmd(args)
+
+        sys.exit()
+
+    def get_rs_name(hparams, rs_hparams):
+        if isinstance(hparams, argparse.Namespace):
+            hparams = vars(hparams)
+        tmp = '_'.join([f'{v["short_name"]}{hparams[k]}'
+                        for k, v in rs_hparams.items()])
+        tmp += ('' if hparams['data_subsample'] == 1 else f'_ds{hparams["data_subsample"]}')
+        return tmp
+
+    # Create a directory to record what is running
+    os.makedirs('is_running', exist_ok=True)
+
+    rs_hparams = getattr(lib.arch, args.arch + 'Block').get_model_specific_rs_hparams()
+
+    # This makes every random search as the same order!
+    if args.seed is not None:
+        lib.seed_everything(args.seed)
+
+    orig_name, num_random_search = args.name, args.random_search
+    args.random_search = 0 # When sending jobs, not run the random search!!
+
+    unsearched_set = {k for k in user_hparams if k in rs_hparams and k not in ['seed']}
+    if len(unsearched_set) > 0:
+        print('Do not random search following attributes:', unsearched_set)
+
+    for r in range(num_random_search):
+        for _ in range(50): # Try 50 times if can't found, quit
+            for k, v in rs_hparams.items():
+                if 'gen' in v and v['gen'] is not None:
+                    if k in user_hparams and k not in ['seed']:
+                        continue
+                    setattr(args, k, v['gen'](args))
+
+            args.name = orig_name + '_' + get_rs_name(args, rs_hparams)
+
+            if pexists(pjoin('is_running', args.name)):
+                continue
+
+            if (not args.ignore_prev_runs) and pexists(pjoin('logs', args.name, 'MY_IS_FINISHED')):
+                continue
+
+            Path(pjoin('is_running', args.name)).touch()
+
+            train(args)
+            break
+        else:
+            print('Can not find any more parameters! Quit.')
+            sys.exit()
+
+
+def train(args) -> None:
     # Create directory
     os.makedirs(pjoin('logs', args.name), exist_ok=True)
 
@@ -591,100 +706,4 @@ def handle_oom_error(e, args, reduce_bs=True):
 
 
 if __name__ == '__main__':
-    args, user_hparams = get_args()
-
-    if args.random_search == 0:
-        try:
-            main(args)
-        finally:
-            if pexists(pjoin('is_running', args.name)): # release it
-                os.remove(pjoin('is_running', args.name))
-
-        def run_pretrain_cmd(args):
-            if pexists(pjoin('logs', args.name, 'MY_IS_FINISHED')):
-                print(f'{args.name} already finishes!')
-                return
-            main(args)
-
-        if args.pretrain:
-            orig_name = args.load_from_pretrain = args.name
-            args.pretrain = 0
-
-            flrs = args.finetune_lr if args.finetune_lr is not None else [args.lr]
-            frss = args.finetune_freeze_steps \
-                if args.finetune_freeze_steps is not None \
-                else [args.freeze_steps]
-            fdss = args.finetune_data_subsample \
-                if args.finetune_data_subsample is not None \
-                else [args.data_subsample]
-
-            print(f'Sending lr={flrs} freeze_steps={frss} data_subsample={fdss}')
-            if args.finetune_zip:
-                assert len(flrs) == len(frss) == len(fdss), 'Lengths are not equal!'
-                for flr, frs, fds in zip(flrs, frss, fdss):
-                    args.lr = flr
-                    args.freeze_steps = frs
-                    args.data_subsample = fds
-                    args.name = orig_name + f'_fds{fds}_flr{flr}_frs{frs}_ft'
-                    run_pretrain_cmd(args)
-
-            for flr in flrs:
-                args.lr = flr
-                for frs in frss:
-                    args.freeze_steps = frs
-                    for fds in fdss:
-                        args.data_subsample = fds
-                        # Change name coorespondingly
-                        args.name = orig_name + f'_fds{fds}_flr{flr}_frs{frs}_ft'
-
-                        run_pretrain_cmd(args)
-
-        sys.exit()
-
-    def get_rs_name(hparams, rs_hparams):
-        if isinstance(hparams, argparse.Namespace):
-            hparams = vars(hparams)
-        tmp = '_'.join([f'{v["short_name"]}{hparams[k]}'
-                        for k, v in rs_hparams.items()])
-        tmp += ('' if hparams['data_subsample'] == 1 else f'_ds{hparams["data_subsample"]}')
-        return tmp
-
-    # Create a directory to record what is running
-    os.makedirs('is_running', exist_ok=True)
-
-    rs_hparams = getattr(lib.arch, args.arch + 'Block').get_model_specific_rs_hparams()
-
-    # This makes every random search as the same order!
-    if args.seed is not None:
-        lib.seed_everything(args.seed)
-
-    orig_name, num_random_search = args.name, args.random_search
-    args.random_search = 0 # When sending jobs, not run the random search!!
-
-    unsearched_set = {k for k in user_hparams if k in rs_hparams and k not in ['seed']}
-    if len(unsearched_set) > 0:
-        print('Do not random search following attributes:', unsearched_set)
-
-    for r in range(num_random_search):
-        for _ in range(50): # Try 50 times if can't found, quit
-            for k, v in rs_hparams.items():
-                if 'gen' in v and v['gen'] is not None:
-                    if k in user_hparams and k not in ['seed']:
-                        continue
-                    setattr(args, k, v['gen'](args))
-
-            args.name = orig_name + '_' + get_rs_name(args, rs_hparams)
-
-            if pexists(pjoin('is_running', args.name)):
-                continue
-
-            if (not args.ignore_prev_runs) and pexists(pjoin('logs', args.name, 'MY_IS_FINISHED')):
-                continue
-
-            Path(pjoin('is_running', args.name)).touch()
-
-            main(args)
-            break
-        else:
-            print('Can not find any more parameters! Quit.')
-            sys.exit()
+    main()

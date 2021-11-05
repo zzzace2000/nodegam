@@ -626,6 +626,10 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
             bin_function = nn_utils.EMoid15Temp(
                 min_temp=args.entmoid_min_temp, steps=args.entmoid_anneal_steps)
 
+        # Backward compatibility
+        if 'in_features' in vars(args):
+            args.input_dim = args.in_features
+
         kwargs = dict(
             input_dim=args.input_dim,
             layer_dim=args.num_trees,
