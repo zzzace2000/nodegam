@@ -3,6 +3,8 @@ mimic_data_processing/
 inverse_rl/
 writing/
 results/
+data/
+logs/
 
 # node and NPM
 npm-debug.log
