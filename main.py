@@ -16,6 +16,8 @@ import torch
 from sklearn.model_selection import train_test_split
 
 import lib
+from qhoptim.pyt import QHAdam
+
 
 # Don't use multiple gpus; If more than 1 gpu, just use first one
 if torch.cuda.device_count() > 1:
@@ -24,16 +26,11 @@ if torch.cuda.device_count() > 1:
 # Use it to create figure instead of interactive
 matplotlib.use('Agg')
 
-# Detect anomaly
-# torch.autograd.set_detect_anomaly(True)
-
 
 def get_args():
-    # Big Transfer arg parser
     parser = argparse.ArgumentParser(description="Fine-tune BiT-M model.")
     parser.add_argument("--name",
                         default='debug',
-                        # default='0517_mimic2_GAM_ga2m_s44_nl3_nt1333_td1_d2_od0.1_ld0.3_cs0.5_lr0.005_lo0_la0.0_pt0_pr0_mn0_ol0_ll1',
                         help="Name of this run. Used for monitoring and checkpointing.")
     parser.add_argument('--seed', type=int, default=None,
                         help='seed for initializing training.')
@@ -49,7 +46,7 @@ def get_args():
     parser.add_argument('--fold', type=int, default=0,
                         help='Choose from 0 to 4, as we only support 5-fold CV.')
     parser.add_argument("--arch", type=str, default='GAM',
-                        choices=['ODST', 'GAM', 'GAMAtt', 'GAMAtt2','GAMAtt3'])
+                        choices=['ODST', 'GAM', 'GAMAtt'])
     parser.add_argument("--num_trees", type=int, default=1024)
     parser.add_argument("--num_layers", type=int, default=2)
     parser.add_argument("--depth", type=int, default=1)
@@ -303,7 +300,6 @@ def main(args) -> None:
         model_state.update(pretrained_state)
         model.load_state_dict(model_state)
 
-    from qhoptim.pyt import QHAdam
     optimizer_params = {'nus': (0.7, 1.0), 'betas': (0.95, 0.998)}
 
     trainer = lib.Trainer(

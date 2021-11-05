@@ -188,9 +188,18 @@ class GAM_ODST(ODST):
                  initialize_selection_logits_=nn.init.uniform_,
                  selectors_detach=False, fs_normalize=True,
                  ga2m=0, **kwargs):
+        '''
+        Change an ODST tree that depends on only 1 or 2 features.
+
+        selectors_detach: if True, the selector will be detached before passing into the next layer.
+            This will save GPU memory in the large dataset (e.g. Epsilon).
+        fs_normalize: if True, we normalize the feature selectors be summed to 1. But actually 
+            False or True do not make too much difference.
+        ga2m: if set to 1, use GA2M, else use GAM.
+        '''
         if ga2m:
-            # If the colsample_bytree too small that there is not at least 2 features
-            # just downgrade to GAM. Or depth is only 1.
+            # If the colsample_bytree too small or depth < 2 that there are not at least 2 features 
+            # modeled in the tree, just downgrade to GAM.
             if depth < 2 \
                     or (colsample_bytree < 1. and int(np.ceil(input_dim * colsample_bytree)) < 2):
                 print('Use GAM instead since colsample_by_tree is too small or depth=1 that GA2M is not allowed.')
@@ -202,16 +211,13 @@ class GAM_ODST(ODST):
             depth=depth,
             colsample_bytree=colsample_bytree,
             initialize_selection_logits_=initialize_selection_logits_,
-            save_memory=save_memory,
             **kwargs)
         self.selectors_detach = selectors_detach
         self.fs_normalize = fs_normalize
         self.ga2m = ga2m
-        if ga2m:
-            assert self.depth >= 2, f'depth should be > 2. depth={self.depth}'
-            assert self.num_sample_feats > 1, \
-                f'should sample > 1 feats. But get {self.num_sample_feats}.'
 
+        # Remove the feature_selection logits defined in the ODST and instead re-initialize to only at most
+        # 1 or 2 depths,
         del self.feature_selection_logits
         the_depth = 1 if not self.ga2m else 2
         self.feature_selection_logits = nn.Parameter(
@@ -245,9 +251,6 @@ class GAM_ODST(ODST):
         if self.selectors_detach: # To save memory
             self.feature_selectors = self.feature_selectors.detach()
 
-        # if self.ga2m:
-        #     self.feature_selectors = self.feature_selectors.
-
         # It needs to multiply by the tree_dim
         if self.tree_dim > 1:
             shape = self.feature_selectors.shape
@@ -269,8 +272,6 @@ class GAM_ODST(ODST):
 
         # post_process it
         feature_selectors = self.post_process(feature_selectors)
-        # if self.fs_normalize:
-        #     feature_selectors /= feature_selectors.sum(dim=0, keepdims=True)
 
         fv = torch.einsum('bi,ind->bnd', input, feature_selectors)
         # ^--[batch_size, num_trees, depth=1,2]
@@ -295,15 +296,6 @@ class GAM_ODST(ODST):
             g4 = torch.einsum("dp,dc->pc", pfs[:, :, 0], myfs[:, :, 1])
 
             fw = g1 * g2 + g3 * g4
-            # p = torch.einsum("ap,cp->pac", pfs[:, :, 0], pfs[:, :, 1])
-            # my = torch.einsum("at,ct->tac", myfs[:, :, 0], myfs[:, :, 1])
-            # fw = torch.einsum("pac,tac->pt", p + p.permute(0, 2, 1), my + my.permute(0, 2, 1))
-            # torch.einsum('icd,ice->', myfs[:, :, 0], myfs[:, :, 1])
-            #
-            # p1 = torch.einsum('ic,ip->pc', myfs[:, :, 0], pfs)
-            # p2 = torch.einsum('ic,ip->pc', myfs[:, :, 1], pfs)
-
-            # fw = (p1 * p2).unsqueeze_(-1)
             fw = fw.clamp_(max=1.).unsqueeze_(-1).repeat(1, 1, 2)
         return fw
 
@@ -357,9 +349,11 @@ class GAMAttODST(GAM_ODST):
         return fw
 
 
-#### For compatability purpose: if it's GA2M, then we have two attention value for 2 depth
-#### If it's GAM, then GAMAtt and GAMAtt2 would perform the same.
+
 class GAMAtt2ODST(GAM_ODST):
+    '''
+    For compatability purpose: do not worry about it.
+    '''
     def __init__(self, *args,
                  prev_input_dim=0,
                  dim_att=-1,
@@ -398,6 +392,11 @@ class GAMAtt2ODST(GAM_ODST):
 
 
 class GAMAtt3ODST(GAM_ODST):
+    '''
+    Testing with another idea that attention depends on both input features 
+        and the outputs from previous layers. Does not have too much difference
+        to GAMAttODST. So no need to use it.
+    '''
     def __init__(self, *args,
                  prev_input_dim=0,
                  dim_att=-1,

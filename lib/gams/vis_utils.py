@@ -120,7 +120,7 @@ def cal_statistics(table, is_metric_higher_better, add_ns_baseline=False):
 def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=False, call_backs=None, 
                      feature_names=None, figsize=None, removed_feature_names=None, 
                      vertical_margin=2, horizontal_margin=2, top_main=-1, top_interactions=0,
-                     only_interactions=False, sort_by_imp=False, show_density=True):
+                     only_interactions=False, sort_by_imp=False, show_density=False):
     if model_names is None:
         model_names = list(all_dfs.keys())
     else:
