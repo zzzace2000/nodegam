@@ -33,29 +33,21 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1377, help='random seed')
     parser.add_argument('--output_dir', type=str, default='models/',
                         help='Model saved directory. Default set as models/')
-    # parser.add_argument('--overwrite', type=int, default=1,
-    #                     help='if set as 1, then it would remove the previous models with same identifier.' \
-    #                          'If 0, then use the stored model to make test prediction.')
     parser.add_argument('--check_in_records', type=int, default=1,
                         help='If set as 1, then check if the output csv already has the result. '
                              'If so, skip.')
     parser.add_argument('--fold', type=int, default=0,
                         help='Choose from 0 to 4, as we only support 5-fold CV.')
-    # parser.add_argument('--n_splits', type=int, default=5,
-    #                     help='Rerun the experiment for this number of splits')
 
     ## Which model and dataset to run
+    # E.g. model_name could be 'ebm-o10-i10' which means EBM model with 10 outer bags and 10 inner bags
+    #   It can also be used as 'spline'.
     parser.add_argument('--model_name', type=str, default='xgb-o10')
     parser.add_argument('--dataset', type=str, default='credit')
     parser.add_argument('--data_subsample', type=float, default=1.,
                         help='Between 0 and 1. Percentage of training data used. '
                              'If bigger than 1, then select these '
                              'number of samples.')
-
-    ## What resource to use: just for recording
-    parser.add_argument('--gpus', type=int, default=1)
-    parser.add_argument('--mem', type=int, default=8)
-    parser.add_argument('--cpu', type=int, default=4)
 
     args = parser.parse_args()
 

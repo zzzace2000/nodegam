@@ -5,6 +5,7 @@ writing/
 results/
 data/
 logs/
+loss_figs/
 
 # node and NPM
 npm-debug.log

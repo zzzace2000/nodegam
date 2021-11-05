@@ -130,7 +130,7 @@ def get_args():
     prev_hparams = load_from_prev_hparams(temp_args)
     if prev_hparams is not None and all([not arg.startswith('--arch') for arg in sys.argv]):
         temp_args.arch = prev_hparams['arch']
-    parser = eval(temp_args.arch).add_model_specific_args(parser)
+    parser = getattr(lib.arch, temp_args.arch + 'Block').add_model_specific_args(parser)
     args = parser.parse_args()
 
     # If loading previous hparams, update prev hparams with user inputs
@@ -611,10 +611,10 @@ def train(args) -> None:
         os.makedirs(f'results', exist_ok=True)
         dataset_postfix = f'_ds{args.data_subsample}' if args.data_subsample != 1. else ''
         if metric != 'multiple_mse':
-            csv_file = f'results/{args.dataset}{dataset_postfix}_{args.arch}_new10.csv'
+            csv_file = f'results/{args.dataset}{dataset_postfix}_{args.arch}.csv'
             lib.utils.output_csv(csv_file, results)
         else:
-            csv_file = f'results/{args.dataset}{dataset_postfix}_{args.arch}_new10.ssv'
+            csv_file = f'results/{args.dataset}{dataset_postfix}_{args.arch}.ssv'
             lib.utils.output_csv(csv_file, results, delimiter=';')
         print('output results to %s' % csv_file)
 
