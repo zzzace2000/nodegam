@@ -8,7 +8,7 @@ This repository is the official implementation of [NODE GAM: Differentiable Gene
 
 To install requirements:
 
-```setup
+```bash
 pip install -r requirements.txt
 ```
 
@@ -20,7 +20,7 @@ Please see `bikeshare_node_ga2m.ipynb`. This is a simplified notebook for how to
 We provide the hyperparmeters we use in `best_hparams/`.  
 To reproduce our results, e.g. NODE-GA2M trained in fold 0 (total 5 folds) of bikeshare, you can run 
 
-```train
+```bash
 python main.py --name 0603_best_bikeshare_f0 --load_from_hparams best_hparams/node_ga2m/0519_f0_best_bikeshare_GAM_ga2m_s83_nl4_nt125_td1_d6_od0.0_ld0.3_cs0.5_lr0.01_lo0_la0.0_pt0_pr0_mn0_ol0_ll1 --fold 0
 ```
 
@@ -30,7 +30,7 @@ The models will be stored in `logs/0603_best_bikeshare_f0/`. And the results inc
 
 You can train Spline and EBM by the following two commands.
 
-```train
+```bash
 python baselines.py --name 0603_bikeshare_spline_f0 --fold 0 --model_name spline --dataset bikeshare
 python baselines.py --name 0603_bikeshare_ebm_f0 --fold 0 --model_name ebm-o100-i100 --dataset bikeshare
 ```
@@ -41,7 +41,7 @@ The result is shown in `results/baselines_bikeshare.csv` and the model is stored
 
 To visualize the model, run this in a notebook:
 
-```eval
+```python
 from lib.gams.vis_utils import vis_main_effects
 from lib.utils import average_GAMs
 
