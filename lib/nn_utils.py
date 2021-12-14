@@ -216,12 +216,12 @@ class _Temp(nn.Module):
         self.max_temp = max_temp
         self.sample_soft = sample_soft
 
-        # Initialize
-        self.tau = max_temp
+        # Initialize; Store it in the model state_dict
+        self.tau = nn.Parameter(torch.tensor(max_temp, dtype=torch.float32), requires_grad=False)
 
     def forward(self, logits, dim=-1):
         # During training and under annealing, then run softly
-        if self.sample_soft or (self.training and self.tau > self.min_temp):
+        if self.sample_soft or (self.training and self.tau.item() > self.min_temp):
             return self.forward_with_tau(logits, dim=dim)
 
         # In test time, sample hardly
@@ -233,19 +233,19 @@ class _Temp(nn.Module):
 
     @property
     def is_deterministic(self):
-        return (not self.sample_soft) and (not self.training or self.tau <= self.min_temp)
+        return (not self.sample_soft) and (not self.training or self.tau.item() <= self.min_temp)
 
     def temp_step_callback(self, step):
         # Calculate the temp; allow fractional step!
         if step >= self.steps:
-            self.tau = self.min_temp
+            self.tau.data = torch.tensor(self.min_temp, dtype=torch.float32)
         else:
             logmin = np.log10(self.min_temp)
             logmax = np.log10(self.max_temp)
             # Linearly interpolate it;
             logtemp = logmax + step / self.steps * (logmin - logmax)
             temp = (10 ** logtemp)
-            self.tau = temp
+            self.tau.data = torch.tensor(temp, dtype=torch.float32)
 
     def forward_with_tau(self, logits, dim):
         raise NotImplementedError()
@@ -254,19 +254,19 @@ class _Temp(nn.Module):
 class SMTemp(_Temp):
     ''' Softmax with temperature scaling '''
     def forward_with_tau(self, logits, dim):
-        return F.softmax(logits / self.tau, dim=dim)
+        return F.softmax(logits / self.tau.item(), dim=dim)
 
 
 class GSMTemp(_Temp):
     ''' Gumbel Softmax with temperature scaling '''
     def forward_with_tau(self, logits, dim):
-        return F.gumbel_softmax(logits, tau=self.tau, dim=dim)
+        return F.gumbel_softmax(logits, tau=self.tau.item(), dim=dim)
 
 
 class EM15Temp(_Temp):
     ''' EntMax15 with temperature scaling '''
     def forward_with_tau(self, logits, dim):
-        return entmax15(logits / self.tau, dim=dim)
+        return entmax15(logits / self.tau.item(), dim=dim)
 
 
 class EMoid15Temp(_Temp):
@@ -275,7 +275,7 @@ class EMoid15Temp(_Temp):
         super().__init__(**kwargs)
 
     def forward_with_tau(self, logits, dim=-1):
-        return entmoid15(logits / self.tau)
+        return entmoid15(logits / self.tau.item())
 
     def discrete_op(self, logits, dim=-1):
         # Do not handle the logits=0 since it's quite rare in opt
