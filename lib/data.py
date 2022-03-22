@@ -1,48 +1,46 @@
-import os
-from os.path import join as pjoin, exists as pexists
 import bz2
+import gzip
+import os
+import shutil
+import warnings
+from os.path import join as pjoin, exists as pexists
+from zipfile import ZipFile
+
 import numpy as np
 import pandas as pd
-import gzip
-import shutil
-import torch
-import random
-import warnings
-
-from sklearn.model_selection import train_test_split
-
-from .utils import download, Timer
-from sklearn.datasets import load_svmlight_file
-from sklearn.preprocessing import QuantileTransformer, StandardScaler
-from sklearn.compose import ColumnTransformer
-from category_encoders import LeaveOneOutEncoder
-from zipfile import ZipFile
 import requests
+from category_encoders import LeaveOneOutEncoder
+from sklearn.datasets import load_svmlight_file
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import QuantileTransformer, StandardScaler
+import base64
+from tqdm import tqdm
+
+from .utils import Timer
 
 
 class MyPreprocessor:
-
     def __init__(self, random_state=1377, cat_features=None, normalize=False,
                  y_normalize=False, quantile_transform=False,
                  output_distribution='normal', n_quantiles=2000,
-                 quantile_noise=0, **kwargs):
+                 quantile_noise=1e-3):
+        """Preprocessor is a dataclass that contains all training and evaluation data required for an experiment.
+
+        Args:
+            dataset: a pre-defined dataset name (see DATSETS) or a custom dataset. Your dataset should be at
+                (or will be downloaded into) {data_path}/{dataset}.
+            random_state: global random seed for an experiment.
+            data_path: a shared data folder path where the dataset is stored (or will be downloaded into).
+            normalize: standardize features by removing the mean and scaling to unit variance.
+            quantile_transform: transforms the features to follow a normal distribution.
+            output_distribution: if quantile_transform == True, data is projected onto this distribution.
+                See the same param of sklearn QuantileTransformer.
+            quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise with
+                std = :quantile_noise: * data.std; this will cause discrete values to be more separable. Please note
+                that this transformation does NOT apply gaussian noise to the resulting data, the noise is only applied
+                for QuantileTransformer.
         """
-        Preprocessor is a dataclass that contains all training and evaluation data required for an experiment
-        :param dataset: a pre-defined dataset name (see DATSETS) or a custom dataset
-            Your dataset should be at (or will be downloaded into) {data_path}/{dataset}
-        :param random_state: global random seed for an experiment
-        :param data_path: a shared data folder path where the dataset is stored (or will be downloaded into)
-        :param normalize: standardize features by removing the mean and scaling to unit variance
-        :param quantile_transform: transforms the features to follow a normal distribution.
-        :param output_distribution: if quantile_transform == True, data is projected onto this distribution
-            See the same param of sklearn QuantileTransformer
-        :param quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise
-            with std = :quantile_noise: * data.std ; this will cause discrete values to be more separable
-            Please not that this transformation does NOT apply gaussian noise to the resulting data,
-            the noise is only applied for QuantileTransformer
-        :param kwargs: depending on the dataset, you may select train size, test size or other params
-            If dataset is not in DATASETS, provide six keys: X_train, y_train, X_valid, y_valid, X_test and y_test
-        """
+
         self.random_state = random_state
         self.cat_features = cat_features
         self.normalize = normalize
@@ -85,10 +83,6 @@ class MyPreprocessor:
                                      n_quantiles=self.n_quantiles,
                                      output_distribution=self.output_distribution,
                                      copy=False)
-            # if self.cat_features is not None:
-            #     conti_fs = [f for f in self.feature_names if f not in self.cat_features]
-            #     qt = ColumnTransformer(transformers=[("quantile", qt, conti_fs)],
-            #                            remainder='passthrough')
             qt.fit(quantile_train)
             self.transformers.append(qt)
 
@@ -124,10 +118,20 @@ class MyPreprocessor:
         return X, y
 
 
+def download_file_from_onedrive(onedrive_link, destination):
+    download(create_onedrive_directdownload(onedrive_link), destination)
+
+
+def create_onedrive_directdownload(onedrive_link):
+    """See https://towardsdatascience.com/how-to-get-onedrive-direct-download-link-ecb52a62fee4 for details."""
+    data_bytes64 = base64.b64encode(bytes(onedrive_link, 'utf-8'))
+    data_bytes64_String = data_bytes64.decode('utf-8').replace('/','_').replace('+','-').rstrip("=")
+    resultUrl = f"https://api.onedrive.com/v1.0/shares/u!{data_bytes64_String}/root/content"
+    return resultUrl
+
+
 def download_file_from_google_drive(id, destination):
-    '''
-    https://stackoverflow.com/questions/38511444/python-download-files-from-google-drive-using-url
-    '''
+    """See https://stackoverflow.com/questions/38511444/python-download-files-from-google-drive-using-url."""
     def get_confirm_token(response):
         for key, value in response.cookies.items():
             if key.startswith('download_warning'):
@@ -155,6 +159,31 @@ def download_file_from_google_drive(id, destination):
         response = session.get(URL, params = params, stream = True)
 
     save_response_content(response, destination)
+
+
+def download(url, filename, delete_if_interrupted=True, chunk_size=4096):
+    """ saves file from url to filename with a fancy progressbar """
+    try:
+        with open(filename, "wb") as f:
+            print("Downloading {} > {}".format(url, filename))
+            response = requests.get(url, stream=True)
+            total_length = response.headers.get('content-length')
+
+            if total_length is None:  # no content length header
+                f.write(response.content)
+            else:
+                total_length = int(total_length)
+                with tqdm(total=total_length) as progressbar:
+                    for data in response.iter_content(chunk_size=chunk_size):
+                        if data:  # filter-out keep-alive chunks
+                            f.write(data)
+                            progressbar.update(len(data))
+    except Exception as e:
+        if delete_if_interrupted:
+            print("Removing incomplete download {}.".format(filename))
+            os.remove(filename)
+        raise e
+    return filename
 
 
 def fetch_A9A(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
@@ -497,7 +526,8 @@ def fetch_YAHOO(path='./data/', fold=0):
 
 
 def fetch_CLICK(path='./data/', valid_size=100_000, validation_seed=None, fold=0):
-    # based on: https://www.kaggle.com/slamnz/primer-airlines-delay
+    """Download in https://www.kaggle.com/slamnz/primer-airlines-delay."""
+
     path = pjoin(path, 'CLICK')
 
     csv_path = pjoin(path, 'click.csv')
@@ -525,21 +555,18 @@ def fetch_CLICK(path='./data/', valid_size=100_000, validation_seed=None, fold=0
         X_test=X_test, y_test=y_test,
         problem='classification',
         cat_features=cat_features,
-        # transformers=[cat_encoder],
     )
 
 
 def fetch_MIMIC2(path='./data/', fold=0):
-    '''
-    '''
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
 
     data_path = pjoin(path, 'mimic2', 'mimic2.data')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'mimic2'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1pmF0HF7LPuxzXqnJhoiiS7ll_e1dOsbb',
-                 pjoin(path, 'mimic2.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dn6P0_ZgUJnE5byw?e=Yptvag',
+                                    pjoin(path, 'mimic2.zip'))
         with ZipFile(pjoin(path, 'mimic2.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -577,15 +604,13 @@ def fetch_MIMIC2(path='./data/', fold=0):
 
 
 def fetch_ADULT(path='./data/', fold=0):
-    '''
-    '''
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'adult', 'adult.data')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'adult'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1kzx-ckH1bzTByINTGjtFPNnU5Dkb2qgx',
-                 pjoin(path, 'adult.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d9UgbPHDcFYwT7hw?e=p2hvRO',
+                                    pjoin(path, 'adult.zip'))
         with ZipFile(pjoin(path, 'adult.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -625,15 +650,13 @@ def fetch_ADULT(path='./data/', fold=0):
 
 
 def fetch_COMPAS(path='./data/', fold=0):
-    '''
-    '''
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'recid', 'recid.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'recid'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1jqkVhzHZDPqDUYwjb7v3zIVoKQNvZZgD',
-                 pjoin(path, 'recid.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dmicxfLrHKvGp90w?e=AkPGRx',
+                                    pjoin(path, 'recid.zip'))
         with ZipFile(pjoin(path, 'recid.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -663,15 +686,13 @@ def fetch_COMPAS(path='./data/', fold=0):
 
 
 def fetch_CHURN(path='./data/', fold=0):
-    '''
-    '''
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'churn', 'WA_Fn-UseC_-Telco-Customer-Churn.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'churn'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1eZnuF2NZ4RgfMEXWuqfgp_Q1UlVQfO20',
-                 pjoin(path, 'churn.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d8sJJojAYr4ekvFQ?e=LCEtqB',
+                                    pjoin(path, 'churn.zip'))
         with ZipFile(pjoin(path, 'churn.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -715,8 +736,9 @@ def fetch_CREDIT(path='./data/', fold=0):
         os.makedirs(pjoin(path, 'credit'), exist_ok=True)
         # Since this file is large, needs to use the custom function
         print('Downloading the file and extract....')
-        download_file_from_google_drive('1TdxRae273iTnYVQnOZzb9bmHBllcMOT6',
-                                        pjoin(path, 'credit.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d_WUNuNrSfUt1nUQ?e=Q2bcoZ',
+                                    pjoin(path, 'credit.zip'))
+
         with ZipFile(pjoin(path, 'credit.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -747,8 +769,8 @@ def fetch_SUPPORT2(path='./data/', fold=0):
     data_path = pjoin(path, 'support2', 'support2.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'support2'), exist_ok=True)
-        download('https://docs.google.com/uc?id=10J1xl6ii3dZS-RZ9AIX2z0l5C4rsKLn-',
-                 pjoin(path, 'support2.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d7D9zz6NtSPX670A?e=XfWO2M',
+                                    pjoin(path, 'support2.zip'))
         with ZipFile(pjoin(path, 'support2.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -790,13 +812,12 @@ def fetch_SUPPORT2(path='./data/', fold=0):
 
 
 def fetch_MIMIC3(path='./data/', fold=0):
-    'https://drive.google.com/file/d//view?usp=sharing'
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' % fold
     data_path = pjoin(path, 'mimic3', 'adult_icu.gz')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'mimic3'), exist_ok=True)
-        download('https://docs.google.com/uc?id=16c0VTnZxw1xwzMzx2jwEClPBNeW_fc8-',
-                 pjoin(path, 'mimic3.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d64ds7FuUcLfXcsg?e=n4U9KR',
+                                    pjoin(path, 'mimic3.zip'))
         with ZipFile(pjoin(path, 'mimic3.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -842,8 +863,8 @@ def fetch_WINE(path='./data/', fold=0):
     data_path = pjoin(path, 'wine', 'winequality-white.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'wine'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1BV2xG1JzBCo6OjchUSzxJO877zILj4oZ',
-                 pjoin(path, 'wine.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d4GVsCvkG5gGu5bw?e=CQENTw',
+                                    pjoin(path, 'wine.zip'))
         with ZipFile(pjoin(path, 'wine.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -872,8 +893,8 @@ def fetch_BIKESHARE(path='./data/', fold=0):
     data_path = pjoin(path, 'bikeshare', 'hour.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'wine'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1sHpV9q3_tK0Uov2iRxT6TzTiRZxyx9K8',
-                 pjoin(path, 'bikeshare.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gDJi9jpEFB71SofQ?e=58Zo0K',
+                                    pjoin(path, 'bikeshare.zip'))
         with ZipFile(pjoin(path, 'bikeshare.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -903,8 +924,8 @@ def fetch_ROSSMANN(path='./data/', fold=0):
     train_path = pjoin(path, 'rossmann-store-sales-preprocessed', 'train')
     if not pexists(train_path):
         os.makedirs(pjoin(path, 'rossmann-store-sales-preprocessed'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1CSI7ETLo50fksaK7Z_YxVzc7BaQNwtjw',
-                 pjoin(path, 'rossmann-store-sales-preprocessed.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gA0FHvME7wC1S3Hw?e=ykEfhe',
+                                    pjoin(path, 'rossmann-store-sales-preprocessed.zip'))
         with ZipFile(pjoin(path, 'rossmann-store-sales-preprocessed.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -942,8 +963,8 @@ def fetch_SARCOS(path='./data/', fold=0, target_id=None):
     data_path = pjoin(path, 'sarcos', 'sarcos_inv.mat')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'sarcos'), exist_ok=True)
-        download('https://docs.google.com/uc?id=1RjCYB87f2L1vL6lx2evA2Wqtpqcb2gYj',
-                 pjoin(path, 'sarcos.zip'))
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gBld5QFzorGSKfkQ?e=45AzFf',
+                                    pjoin(path, 'sarcos.zip'))
         with ZipFile(pjoin(path, 'sarcos.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
             zipObj.extractall(path)
@@ -980,7 +1001,7 @@ def fetch_SARCOS(path='./data/', fold=0, target_id=None):
 
 
 DATASETS = {
-    # NODE datasets
+    # NODE (large) datasets
     'A9A': fetch_A9A,
     'EPSILON': fetch_EPSILON,
     'PROTEIN': fetch_PROTEIN, # multi-class
@@ -989,7 +1010,7 @@ DATASETS = {
     'MICROSOFT': fetch_MICROSOFT,
     'YAHOO': fetch_YAHOO,
     'CLICK': fetch_CLICK,
-    # The rest are GAMs datasets
+    # The rest are GAMs (medium) datasets
     'MIMIC2': fetch_MIMIC2,
     'COMPAS': fetch_COMPAS,
     'ADULT': fetch_ADULT,
@@ -1001,7 +1022,7 @@ DATASETS = {
     'ROSSMANN': fetch_ROSSMANN,
     'WINE': fetch_WINE,
     'BIKESHARE': fetch_BIKESHARE,
-    # Multi-task regression
+    # Multi-task regression: but does not improve.
     'SARCOS': fetch_SARCOS,
     'SARCOS0': lambda *args, **kwargs: fetch_SARCOS(*args, target_id=0, **kwargs),
     'SARCOS1': lambda *args, **kwargs: fetch_SARCOS(*args, target_id=1, **kwargs),
