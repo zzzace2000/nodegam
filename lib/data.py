@@ -16,8 +16,6 @@ from sklearn.preprocessing import QuantileTransformer, StandardScaler
 import base64
 from tqdm import tqdm
 
-from .utils import Timer
-
 
 class MyPreprocessor:
     def __init__(self, random_state=1377, cat_features=None, normalize=False,
@@ -252,13 +250,14 @@ def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=No
             with open(file_name, 'wb') as f:
                 f.write(zipfile.read())
 
-    with Timer("reading dataset (it may take a long time)"):
-        X_train, y_train = load_svmlight_file(train_path, dtype=np.float32, n_features=2000)
-        X_test, y_test = load_svmlight_file(test_path, dtype=np.float32, n_features=2000)
-        X_train, X_test = X_train.toarray(), X_test.toarray()
-        y_train, y_test = y_train.astype(np.int), y_test.astype(np.int)
-        y_train[y_train == -1] = 0
-        y_test[y_test == -1] = 0
+    print("reading dataset (it may take a long time)")
+    X_train, y_train = load_svmlight_file(train_path, dtype=np.float32, n_features=2000)
+    X_test, y_test = load_svmlight_file(test_path, dtype=np.float32, n_features=2000)
+    X_train, X_test = X_train.toarray(), X_test.toarray()
+    y_train, y_test = y_train.astype(np.int), y_test.astype(np.int)
+    y_train[y_train == -1] = 0
+    y_test[y_test == -1] = 0
+    print("Finish reading dataset.")
 
     if all(sizes is None for sizes in (train_size, valid_size, test_size)):
         train_idx_path = pjoin(path, 'stratified_train_idx.txt')
@@ -565,7 +564,7 @@ def fetch_MIMIC2(path='./data/', fold=0):
     data_path = pjoin(path, 'mimic2', 'mimic2.data')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'mimic2'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dn6P0_ZgUJnE5byw?e=Yptvag',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dnoN2EHpDJiNWkjg?e=qdWLMK',
                                     pjoin(path, 'mimic2.zip'))
         with ZipFile(pjoin(path, 'mimic2.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -609,7 +608,7 @@ def fetch_ADULT(path='./data/', fold=0):
     data_path = pjoin(path, 'adult', 'adult.data')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'adult'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d9UgbPHDcFYwT7hw?e=p2hvRO',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d9xcRG4wxNyU2C6w?e=XCb4QX',
                                     pjoin(path, 'adult.zip'))
         with ZipFile(pjoin(path, 'adult.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -655,7 +654,7 @@ def fetch_COMPAS(path='./data/', fold=0):
     data_path = pjoin(path, 'recid', 'recid.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'recid'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dmicxfLrHKvGp90w?e=AkPGRx',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8dmk25YOdi1H3m-pA?e=diPxsI',
                                     pjoin(path, 'recid.zip'))
         with ZipFile(pjoin(path, 'recid.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -691,7 +690,7 @@ def fetch_CHURN(path='./data/', fold=0):
     data_path = pjoin(path, 'churn', 'WA_Fn-UseC_-Telco-Customer-Churn.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'churn'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d8sJJojAYr4ekvFQ?e=LCEtqB',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d8lnowc7axminWoA?e=P4jpum',
                                     pjoin(path, 'churn.zip'))
         with ZipFile(pjoin(path, 'churn.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -736,7 +735,7 @@ def fetch_CREDIT(path='./data/', fold=0):
         os.makedirs(pjoin(path, 'credit'), exist_ok=True)
         # Since this file is large, needs to use the custom function
         print('Downloading the file and extract....')
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d_WUNuNrSfUt1nUQ?e=Q2bcoZ',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d_VZKCFHe7_uNkpw?e=vOSV3S',
                                     pjoin(path, 'credit.zip'))
 
         with ZipFile(pjoin(path, 'credit.zip'), 'r') as zipObj:
@@ -769,7 +768,7 @@ def fetch_SUPPORT2(path='./data/', fold=0):
     data_path = pjoin(path, 'support2', 'support2.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'support2'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d7D9zz6NtSPX670A?e=XfWO2M',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d74X-u6bwQjhJTIA?e=DV7GIK',
                                     pjoin(path, 'support2.zip'))
         with ZipFile(pjoin(path, 'support2.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -816,7 +815,7 @@ def fetch_MIMIC3(path='./data/', fold=0):
     data_path = pjoin(path, 'mimic3', 'adult_icu.gz')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'mimic3'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d64ds7FuUcLfXcsg?e=n4U9KR',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d6o6icAULya24iyw?e=s7TNxa',
                                     pjoin(path, 'mimic3.zip'))
         with ZipFile(pjoin(path, 'mimic3.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -863,7 +862,7 @@ def fetch_WINE(path='./data/', fold=0):
     data_path = pjoin(path, 'wine', 'winequality-white.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'wine'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d4GVsCvkG5gGu5bw?e=CQENTw',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8d4gpTqWoXkoMH0rw?e=oKwg6i',
                                     pjoin(path, 'wine.zip'))
         with ZipFile(pjoin(path, 'wine.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -893,7 +892,7 @@ def fetch_BIKESHARE(path='./data/', fold=0):
     data_path = pjoin(path, 'bikeshare', 'hour.csv')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'wine'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gDJi9jpEFB71SofQ?e=58Zo0K',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gDTrnCO2vDulTygA?e=wCHjgF',
                                     pjoin(path, 'bikeshare.zip'))
         with ZipFile(pjoin(path, 'bikeshare.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -924,7 +923,7 @@ def fetch_ROSSMANN(path='./data/', fold=0):
     train_path = pjoin(path, 'rossmann-store-sales-preprocessed', 'train')
     if not pexists(train_path):
         os.makedirs(pjoin(path, 'rossmann-store-sales-preprocessed'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gA0FHvME7wC1S3Hw?e=ykEfhe',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gAG_oFKWoSWPloXg?e=gfcjBI',
                                     pjoin(path, 'rossmann-store-sales-preprocessed.zip'))
         with ZipFile(pjoin(path, 'rossmann-store-sales-preprocessed.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -963,7 +962,7 @@ def fetch_SARCOS(path='./data/', fold=0, target_id=None):
     data_path = pjoin(path, 'sarcos', 'sarcos_inv.mat')
     if not pexists(data_path):
         os.makedirs(pjoin(path, 'sarcos'), exist_ok=True)
-        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gBld5QFzorGSKfkQ?e=45AzFf',
+        download_file_from_onedrive('https://1drv.ms/u/s!ArHmmFHCSXTIg8gB5OqsF9nHg2IiZw?e=J7e4Wv',
                                     pjoin(path, 'sarcos.zip'))
         with ZipFile(pjoin(path, 'sarcos.zip'), 'r') as zipObj:
             # Extract all the contents of zip file in current directory
@@ -1032,3 +1031,7 @@ DATASETS = {
     'SARCOS5': lambda *args, **kwargs: fetch_SARCOS(*args, target_id=5, **kwargs),
     'SARCOS6': lambda *args, **kwargs: fetch_SARCOS(*args, target_id=6, **kwargs),
 }
+
+
+if __name__ == '__main__':
+    fetch_WINE()
