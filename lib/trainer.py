@@ -11,9 +11,11 @@ import torch.nn.functional as F
 from sklearn.metrics import roc_auc_score, log_loss
 
 try:
+    IS_AMP_EXISTS = True
     from apex import amp
 except ModuleNotFoundError:
     print('WARNING! The apex is not installed so fp16 is not available.')
+    IS_AMP_EXISTS = False
 
 
 from .nn_utils import to_one_hot
@@ -81,7 +83,7 @@ class Trainer(nn.Module):
                 print('using automatic experiment name: ' + experiment_name)
 
         self.experiment_path = pjoin('logs/', experiment_name)
-        if fp16:
+        if fp16 and IS_AMP_EXISTS:
             self.model, self.opt = amp.initialize(
                 self.model, self.opt, opt_level='O1')
         if warm_start:
@@ -103,7 +105,7 @@ class Trainer(nn.Module):
             ('model', self.model.state_dict(**kwargs)),
             ('opt', self.opt.state_dict()),
             ('step', self.step),
-        ] + ([] if not self.fp16 else [('amp', amp.state_dict())])), path)
+        ] + ([] if not (self.fp16 and IS_AMP_EXISTS) else [('amp', amp.state_dict())])), path)
         if self.verbose:
             print("Saved " + path)
         return path
@@ -123,7 +125,7 @@ class Trainer(nn.Module):
         self.model.load_state_dict(checkpoint['model'], **kwargs)
         self.opt.load_state_dict(checkpoint['opt'])
         self.step = int(checkpoint['step'])
-        if self.fp16 and 'amp' in checkpoint:
+        if self.fp16 and IS_AMP_EXISTS and 'amp' in checkpoint:
             amp.load_state_dict(checkpoint['amp'])
 
         # Set the temperature
@@ -171,7 +173,7 @@ class Trainer(nn.Module):
         if len(list_of_files) == 0:
             return []
 
-        assert len(list_of_files) > 0, "No files found: " + pattern
+        assert len(list_of_files) > 0, "No latest checkpoint found: " + pattern
         return sorted(list_of_files, key=os.path.getctime, reverse=True)[:n_last]
 
     def remove_old_temp_checkpoints(self, number_ckpts_to_keep=None):
@@ -224,7 +226,7 @@ class Trainer(nn.Module):
 
         loss += penalty
 
-        if self.fp16:
+        if self.fp16 and IS_AMP_EXISTS:
             with amp.scale_loss(loss, self.opt) as scaled_loss:
                 scaled_loss.backward()
         else:
