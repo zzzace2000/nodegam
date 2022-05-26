@@ -15,7 +15,8 @@ pip install -r requirements.txt
 
 ## Training
 
-Please see `bikeshare_node_ga2m.ipynb`. This is a simplified notebook for how to train and visualize a NODE-GA2M on Bikeshare.
+Please see the following colab notebook. This is a simplified notebook for how to train and visualize a NODE-GA2M on Bikeshare.
+https://colab.research.google.com/drive/1C_gBoSc1AlQ7VvCXVWiU-7X3YjQZTiZI?usp=sharing
 
 We provide the hyperparmeters we use in `best_hparams/`.  
 To reproduce our results, e.g. NODE-GA2M trained in fold 0 (total 5 folds) of bikeshare, you can run 
