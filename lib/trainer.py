@@ -1,24 +1,23 @@
+import glob
 import os
 import time
-import glob
-import numpy as np
+from collections import OrderedDict
+from copy import deepcopy
+from os.path import join as pjoin, exists as pexists
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from .utils import get_latest_file, iterate_minibatches, check_numpy, process_in_chunks
-from .nn_utils import to_one_hot
-from collections import OrderedDict
-from copy import deepcopy
-from tensorboardX import SummaryWriter
-from apex import amp
-import json
-from os.path import join as pjoin, exists as pexists
-import argparse
-from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts
-
 from sklearn.metrics import roc_auc_score, log_loss
-from . import nn_utils, arch
+
+try:
+    from apex import amp
+except ModuleNotFoundError:
+    print('WARNING! The apex is not installed so fp16 is not available.')
+
+
+from .nn_utils import to_one_hot
+from .utils import get_latest_file, check_numpy, process_in_chunks
 
 
 class Trainer(nn.Module):
@@ -82,9 +81,6 @@ class Trainer(nn.Module):
                 print('using automatic experiment name: ' + experiment_name)
 
         self.experiment_path = pjoin('logs/', experiment_name)
-        # if not warm_start and experiment_name != 'debug':
-        #     assert not os.path.exists(self.experiment_path), 'experiment {} already exists'.format(experiment_name)
-        # self.writer = SummaryWriter(self.experiment_path, comment=experiment_name)
         if fp16:
             self.model, self.opt = amp.initialize(
                 self.model, self.opt, opt_level='O1')
@@ -247,10 +243,6 @@ class Trainer(nn.Module):
         ).to(x_batch.device)
 
         infills = 0.
-        # if self.problem == 'pretrain_mask':
-        #     # Use marginal dist (Gaussian) to in-fill.
-        #     infills = torch.normal(0, 1, size=masks.shape).to(x_batch.device)
-
         # To make it more difficult, 10% of the time we do not mask the inputs!
         # Similar to BERT tricks.
         new_masks = masks
@@ -265,10 +257,6 @@ class Trainer(nn.Module):
             nb_masks[nb_masks == 0] = 1
             loss = (((outputs - targets) * masks) ** 2) / nb_masks
             loss = torch.mean(loss)
-        # elif self.problem == 'pretrain_mask':
-        #     # BCE loss to predict if that token is the mask. And set target as 0.9
-        #     loss = F.binary_cross_entropy_with_logits(
-        #         outputs, (1. - self.masks_noise) * masks)
         else:
             raise NotImplementedError('Unknown problem: ' + self.problem)
 
@@ -282,10 +270,6 @@ class Trainer(nn.Module):
                 outputs = process_in_chunks(self.model, X_test, batch_size=batch_size)
                 loss = (((outputs - X_test)) ** 2)
                 loss = torch.mean(loss)
-            # elif self.problem == 'pretrain_mask':
-            #     X_masked, masks, _ = self.mask_input(X_test)
-            #     outputs = process_in_chunks(self.model, X_masked, batch_size=batch_size)
-            #     loss = self.pretrain_loss(outputs, masks, X_test)
             else:
                 raise NotImplementedError('Unknown problem: ' + self.problem)
 
@@ -300,7 +284,6 @@ class Trainer(nn.Module):
             logits = process_in_chunks(self.model, X_test, batch_size=batch_size)
             logits = check_numpy(logits)
             error_rate = (y_test != (logits >= 0)).mean()
-            # error_rate = (y_test != np.argmax(logits, axis=1)).mean()
         return error_rate
 
     def evaluate_negative_auc(self, X_test, y_test, device, batch_size=4096):
@@ -310,9 +293,6 @@ class Trainer(nn.Module):
         with torch.no_grad():
             logits = process_in_chunks(self.model, X_test, batch_size=batch_size)
             logits = check_numpy(logits)
-
-            # assert logits.shape[1] == 2, 'logits shape is not binary! %d' % logits.shape[1]
-            # logit_diff = logits[:, 1] - logits[:, 0]
             auc = roc_auc_score(y_test, logits)
 
         return -auc
