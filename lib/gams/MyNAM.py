@@ -1,29 +1,21 @@
-import os
-from collections import OrderedDict
-from os.path import join as pjoin  # pylint: disable=g-importing-member
-from os.path import exists as pexists
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
+import math
 import time
 
-from argparse import Namespace
-import numpy as np
-import math
-from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
-import torchvision as tv
-from pytorch_lightning.core import LightningModule
-from sklearn.metrics import average_precision_score
-from pytorch_lightning.callbacks import ModelCheckpoint
-from torch.utils.data import TensorDataset, DataLoader
 from apex import amp
-from .utils import DotDict
-from .base import MyGAMPlotMixinBase
-from .EncodingBase import OnehotEncodingClassifierMixin, OnehotEncodingRegressorMixin
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
+from torch.nn.parameter import Parameter
+from torch.utils.data import TensorDataset, DataLoader
+
+from .EncodingBase import OnehotEncodingClassifierMixin
 from .MyBaselines import MyMaxMinTransformMixin, MyTransformClassifierMixin
+from .base import MyGAMPlotMixinBase
 
 
 # TODO: implement the custom activation layer

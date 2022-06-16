@@ -1,3 +1,5 @@
+"""Data preprocessors and functions."""
+
 import bz2
 import gzip
 import os
@@ -22,21 +24,34 @@ class MyPreprocessor:
                  y_normalize=False, quantile_transform=False,
                  output_distribution='normal', n_quantiles=2000,
                  quantile_noise=1e-3):
-        """Preprocessor is a dataclass that contains all training and evaluation data required for an experiment.
+        """Preprocessor does the data preprocessing like input and target normalization.
 
         Args:
-            dataset: a pre-defined dataset name (see DATSETS) or a custom dataset. Your dataset should be at
-                (or will be downloaded into) {data_path}/{dataset}.
             random_state: global random seed for an experiment.
-            data_path: a shared data folder path where the dataset is stored (or will be downloaded into).
+            cat_features: if passed in, it does the target encoding for these features before other
+                input normalization like quantile transformation. Default: None.
             normalize: standardize features by removing the mean and scaling to unit variance.
-            quantile_transform: transforms the features to follow a normal distribution.
-            output_distribution: if quantile_transform == True, data is projected onto this distribution.
-                See the same param of sklearn QuantileTransformer.
-            quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise with
-                std = :quantile_noise: * data.std; this will cause discrete values to be more separable. Please note
-                that this transformation does NOT apply gaussian noise to the resulting data, the noise is only applied
-                for QuantileTransformer.
+            y_normalize: if True, it standardizes the targets y by setting the mean and stdev to 0
+                and 1. Useful in the regression setting.
+            quantile_transform: transforms the features to follow a normal or uniform distribution.
+            output_distribution: choose between ['normal', 'uniform']. Data is projected onto this
+                distribution. See the same param of sklearn QuantileTransformer. 'normal' is better.
+            n_quantiles: number of quantiles to estimate the distribution. Default: 2000.
+            quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise
+                with std = :quantile_noise: * data.std; this will cause discrete values to be more
+                separable. Please note that this transformation does NOT apply gaussian noise to the
+                resulting data, the noise is only applied for QuantileTransformer.
+
+        Example:
+            >>> preprocessor = lib.MyPreprocessor(
+            >>>     cat_features=['ethnicity', 'gender'],
+            >>>     y_normalize=True,
+            >>>     random_state=1337,
+            >>>     quantile_transform=True,
+            >>>     output_distribution='normal',
+            >>> )
+            >>> preprocessor.fit(X_train, y_train)
+            >>> X_train, y_train = preprocessor.transform(X_train, y_train)
         """
 
         self.random_state = random_state
@@ -116,12 +131,38 @@ class MyPreprocessor:
         return X, y
 
 
+def download(url, filename, delete_if_interrupted=True, chunk_size=4096):
+    """It saves file from url to filename with a fancy progressbar."""
+    try:
+        with open(filename, "wb") as f:
+            print("Downloading {} > {}".format(url, filename))
+            response = requests.get(url, stream=True)
+            total_length = response.headers.get('content-length')
+
+            if total_length is None:  # no content length header
+                f.write(response.content)
+            else:
+                total_length = int(total_length)
+                with tqdm(total=total_length) as progressbar:
+                    for data in response.iter_content(chunk_size=chunk_size):
+                        if data:  # filter-out keep-alive chunks
+                            f.write(data)
+                            progressbar.update(len(data))
+    except Exception as e:
+        if delete_if_interrupted:
+            print("Removing incomplete download {}.".format(filename))
+            os.remove(filename)
+        raise e
+    return filename
+
+
 def download_file_from_onedrive(onedrive_link, destination):
+    """Download file from onedrive."""
     download(create_onedrive_directdownload(onedrive_link), destination)
 
 
 def create_onedrive_directdownload(onedrive_link):
-    """See https://towardsdatascience.com/how-to-get-onedrive-direct-download-link-ecb52a62fee4 for details."""
+    """See https://towardsdatascience.com/how-to-get-onedrive-direct-download-link-ecb52a62fee4."""
     data_bytes64 = base64.b64encode(bytes(onedrive_link, 'utf-8'))
     data_bytes64_String = data_bytes64.decode('utf-8').replace('/','_').replace('+','-').rstrip("=")
     resultUrl = f"https://api.onedrive.com/v1.0/shares/u!{data_bytes64_String}/root/content"
@@ -159,80 +200,19 @@ def download_file_from_google_drive(id, destination):
     save_response_content(response, destination)
 
 
-def download(url, filename, delete_if_interrupted=True, chunk_size=4096):
-    """ saves file from url to filename with a fancy progressbar """
-    try:
-        with open(filename, "wb") as f:
-            print("Downloading {} > {}".format(url, filename))
-            response = requests.get(url, stream=True)
-            total_length = response.headers.get('content-length')
-
-            if total_length is None:  # no content length header
-                f.write(response.content)
-            else:
-                total_length = int(total_length)
-                with tqdm(total=total_length) as progressbar:
-                    for data in response.iter_content(chunk_size=chunk_size):
-                        if data:  # filter-out keep-alive chunks
-                            f.write(data)
-                            progressbar.update(len(data))
-    except Exception as e:
-        if delete_if_interrupted:
-            print("Removing incomplete download {}.".format(filename))
-            os.remove(filename)
-        raise e
-    return filename
-
-
-def fetch_A9A(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
-    path = pjoin(path, 'A9A')
-
-    train_path = pjoin(path, 'a9a')
-    test_path = pjoin(path, 'a9a.t')
-    if not all(pexists(fname) for fname in (train_path, test_path)):
-        os.makedirs(path, exist_ok=True)
-        download("https://www.dropbox.com/s/9cqdx166iwonrj9/a9a?dl=1", train_path)
-        download("https://www.dropbox.com/s/sa0ds895c0v4xc6/a9a.t?dl=1", test_path)
-
-    X_train, y_train = load_svmlight_file(train_path, dtype=np.float32, n_features=123)
-    X_test, y_test = load_svmlight_file(test_path, dtype=np.float32, n_features=123)
-    X_train, X_test = X_train.toarray(), X_test.toarray()
-    y_train[y_train == -1] = 0
-    y_test[y_test == -1] = 0
-    y_train, y_test = y_train.astype(np.int), y_test.astype(np.int)
-
-    if all(sizes is None for sizes in (train_size, valid_size, test_size)):
-        train_idx_path = pjoin(path, 'stratified_train_idx.txt')
-        valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
-        if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/xy4wwvutwikmtha/stratified_train_idx.txt?dl=1", train_idx_path)
-            download("https://www.dropbox.com/s/nthpxofymrais5s/stratified_test_idx.txt?dl=1", valid_idx_path)
-        train_idx = pd.read_csv(train_idx_path, header=None)[0].values
-        valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
-    else:
-        assert train_size, "please provide either train_size or none of sizes"
-        if valid_size is None:
-            valid_size = len(X_train) - train_size
-            assert valid_size > 0
-        if train_size + valid_size > len(X_train):
-            warnings.warn('train_size + valid_size = {} exceeds dataset size: {}.'.format(
-                train_size + valid_size, len(X_train)), Warning)
-        if test_size is not None:
-            warnings.warn('Test set is fixed for this dataset.', Warning)
-
-        shuffled_indices = np.random.permutation(np.arange(len(X_train)))
-        train_idx = shuffled_indices[:train_size]
-        valid_idx = shuffled_indices[train_size: train_size + valid_size]
-
-    return dict(
-        X_train=X_train[train_idx], y_train=y_train[train_idx],
-        X_valid=X_train[valid_idx], y_valid=y_train[valid_idx],
-        X_test=X_test, y_test=y_test,
-        problem='classification',
-    )
-
-
 def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
+    """Download EPSILON dataset.
+
+    Args:
+        path: where the data should be stored. It downloads the folder called EPSILON here.
+        train_size, valid_size, test_size: you can specify how many data points. Type: int.
+        fold: which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        A dictionary that contains:
+            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
+            'problem': either 'classification' or 'regression'.
+    """
     path = pjoin(path, 'EPSILON')
 
     train_path = pjoin(path, 'epsilon_normalized')
@@ -263,8 +243,10 @@ def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=No
         train_idx_path = pjoin(path, 'stratified_train_idx.txt')
         valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
         if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/wxgm94gvm6d3xn5/stratified_train_idx.txt?dl=1", train_idx_path)
-            download("https://www.dropbox.com/s/fm4llo5uucdglti/stratified_valid_idx.txt?dl=1", valid_idx_path)
+            download("https://www.dropbox.com/s/wxgm94gvm6d3xn5/stratified_train_idx.txt?dl=1",
+                     train_idx_path)
+            download("https://www.dropbox.com/s/fm4llo5uucdglti/stratified_valid_idx.txt?dl=1",
+                     valid_idx_path)
         train_idx = pd.read_csv(train_idx_path, header=None)[0].values
         valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
     else:
@@ -294,8 +276,19 @@ def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=No
 
 
 def fetch_PROTEIN(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
-    """
-    https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#protein
+    """Download Protein dataset.
+
+    See https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#protein.
+
+    Args:
+        path: where the data should be stored. It downloads the folder called PROTEIN here.
+        train_size, valid_size, test_size: you can specify how many data points. Type: int.
+        fold: which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        A dictionary that contains:
+            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
+            'problem': either 'classification' or 'regression'.
     """
     path = pjoin(path, 'PROTEIN')
 
@@ -349,6 +342,18 @@ def fetch_PROTEIN(path='./data/', train_size=None, valid_size=None, test_size=No
 
 
 def fetch_YEAR(path='./data/', train_size=None, valid_size=None, test_size=51630, fold=0):
+    """Download YEAR dataset.
+
+    Args:
+        path: where the data should be stored. It downloads the folder called YEAR here.
+        train_size, valid_size, test_size: you can specify how many data points. Type: int.
+        fold: which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        A dictionary that contains:
+            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
+            'problem': either 'classification' or 'regression'.
+    """
     path = pjoin(path, 'YEAR')
 
     data_path = pjoin(path, 'data.csv')
@@ -395,13 +400,26 @@ def fetch_YEAR(path='./data/', train_size=None, valid_size=None, test_size=51630
 
 
 def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 10 ** 5, fold=0):
+    """Download HIGGS dataset.
+
+    Args:
+        path: where the data should be stored. It downloads the folder called YEAR here.
+        train_size, valid_size, test_size: you can specify how many data points. Type: int.
+        fold: which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        A dictionary that contains:
+            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
+            'problem': either 'classification' or 'regression'.
+    """
     path = pjoin(path, 'HIGGS')
 
     data_path = pjoin(path, 'higgs.csv')
     if not pexists(data_path):
         os.makedirs(path, exist_ok=True)
         archive_path = pjoin(path, 'HIGGS.csv.gz')
-        download('https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz', archive_path)
+        download('https://archive.ics.uci.edu/ml/machine-learning-databases/00280/HIGGS.csv.gz',
+                 archive_path)
         with gzip.open(archive_path, 'rb') as f_in:
             with open(data_path, 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
@@ -417,8 +435,10 @@ def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 
         train_idx_path = pjoin(path, 'stratified_train_idx.txt')
         valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
         if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/i2uekmwqnp9r4ix/stratified_train_idx.txt?dl=1", train_idx_path)
-            download("https://www.dropbox.com/s/wkbk74orytmb2su/stratified_valid_idx.txt?dl=1", valid_idx_path)
+            download("https://www.dropbox.com/s/i2uekmwqnp9r4ix/stratified_train_idx.txt?dl=1",
+                     train_idx_path)
+            download("https://www.dropbox.com/s/wkbk74orytmb2su/stratified_valid_idx.txt?dl=1",
+                     valid_idx_path)
         train_idx = pd.read_csv(train_idx_path, header=None)[0].values
         valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
     else:
@@ -445,6 +465,7 @@ def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 
 
 
 def fetch_MICROSOFT(path='./data/', fold=0):
+    """Download MICROSOFT dataset."""
     path = pjoin(path, 'MICROSOFT')
 
     train_path = pjoin(path, 'msrank_train.tsv')
@@ -483,6 +504,7 @@ def fetch_MICROSOFT(path='./data/', fold=0):
 
 
 def fetch_YAHOO(path='./data/', fold=0):
+    """Download YAHOO dataset."""
     path = pjoin(path, 'YAHOO')
 
     train_path = pjoin(path, 'yahoo_train.tsv')
@@ -525,7 +547,7 @@ def fetch_YAHOO(path='./data/', fold=0):
 
 
 def fetch_CLICK(path='./data/', valid_size=100_000, validation_seed=None, fold=0):
-    """Download in https://www.kaggle.com/slamnz/primer-airlines-delay."""
+    """Download CLICK from https://www.kaggle.com/slamnz/primer-airlines-delay."""
 
     path = pjoin(path, 'CLICK')
 
@@ -558,6 +580,23 @@ def fetch_CLICK(path='./data/', valid_size=100_000, validation_seed=None, fold=0
 
 
 def fetch_MIMIC2(path='./data/', fold=0):
+    """Download MIMIC2 dataset.
+
+    Args:
+        path: where the data should be stored. It downloads the folder called YEAR here.
+        fold: which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        A dictionary that contains:
+            'X_train', 'y_train', 'X_test', 'y_test': pandas dataframe.
+            'problem': either 'classification' or 'regression'.
+            'cat_features': which features are categorical.
+            'metric': the optimized metric on this dataset.
+            'quantile_noise': the noise magnitude. The noise should be small enough to get good
+                normal dist, but big enough to seperate the categorical features after quantile
+                transform.
+    """
+
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
 
@@ -1001,7 +1040,6 @@ def fetch_SARCOS(path='./data/', fold=0, target_id=None):
 
 DATASETS = {
     # NODE (large) datasets
-    'A9A': fetch_A9A,
     'EPSILON': fetch_EPSILON,
     'PROTEIN': fetch_PROTEIN, # multi-class
     'YEAR': fetch_YEAR,
@@ -1017,7 +1055,6 @@ DATASETS = {
     'CREDIT': fetch_CREDIT,
     'SUPPORT2': fetch_SUPPORT2,
     'MIMIC3': fetch_MIMIC3,
-    # My found
     'ROSSMANN': fetch_ROSSMANN,
     'WINE': fetch_WINE,
     'BIKESHARE': fetch_BIKESHARE,

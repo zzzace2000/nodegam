@@ -1,22 +1,26 @@
-import contextlib
+"""Neural Network related utils like Entmax and Modules."""
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Function
-from collections import OrderedDict
 
 from torch.jit import script
 
 
 def to_one_hot(y, depth=None):
-    r"""
+    """Make the target become one-hot encoding.
+
     Takes integer with n dims and converts it to 1-hot representation with n + 1 dims.
     The n+1'st dimension will have zeros everywhere but at y'th index, where it will be equal to 1.
+
     Args:
-        y: input integer (IntTensor, LongTensor or Variable) of any shape
-        depth (int):  the size of the one hot dimension
+        y: input integer (IntTensor, LongTensor or Variable) of any shape.
+        depth (int):  the size of the one hot dimension.
+
+    Returns:
+        y_onehot: the onehot encoding of y.
     """
     y_flat = y.to(torch.int64).view(-1, 1)
     depth = depth if depth is not None else int(torch.max(y_flat)) + 1
@@ -34,11 +38,12 @@ def _make_ix_like(input, dim=0):
 
 
 class SparsemaxFunction(Function):
-    """
+    """Sparsemax function.
+
     An implementation of sparsemax (Martins & Astudillo, 2016). See
     :cite:`DBLP:journals/corr/MartinsA16` for detailed description.
 
-    By Ben Peters and Vlad Niculae
+    By Ben Peters and Vlad Niculae.
     """
 
     @staticmethod
@@ -101,7 +106,8 @@ sparsemoid = lambda input: (0.5 * input + 0.5).clamp_(0, 1)
 
 
 class Entmax15Function(Function):
-    """
+    """Entropy Max (EntMax).
+
     An implementation of exact Entmax with alpha=1.5 (B. Peters, V. Niculae, A. Martins). See
     :cite:`https://arxiv.org/abs/1905.05702 for detailed description.
     Source: https://github.com/deep-spin/entmax
@@ -152,7 +158,7 @@ class Entmax15Function(Function):
 
 
 class Entmoid15(Function):
-    """ A highly optimized equivalent of labda x: Entmax15([x, 0]) """
+    """A highly optimized equivalent of labda x: Entmax15([x, 0])."""
 
     @staticmethod
     def forward(ctx, input):
@@ -188,7 +194,11 @@ entmoid15 = Entmoid15.apply
 
 
 def my_one_hot(val, dim=-1):
-    ''' Make one hot along certain dimension '''
+    """Make one hot encoding along certain dimension and not just the last dimension.
+
+    Args:
+        val: a pytorch tensor.
+    """
     max_cls = torch.argmax(val, dim=dim)
     onehot = F.one_hot(max_cls, num_classes=val.shape[dim])
 
@@ -202,29 +212,32 @@ def my_one_hot(val, dim=-1):
 
 
 class _Temp(nn.Module):
-    '''
-    Shared base class for both Softmax and Gumbel
-    '''
-    def __init__(self, steps, max_temp=1., min_temp=0.01,
-                 sample_soft=False):
-        '''
-        Annealing temperature from max to min in log10 space
-        '''
+    """Shared base class to do temperature annealing for EntMax/SoftMax/GumbleMax functions."""
+
+    def __init__(self, steps, max_temp=1., min_temp=0.01, sample_soft=False):
+        """Annealing temperature from max to min in log10 space.
+
+        Args:
+            steps: the number of steps to change from max_temp to the min_temp in log10 space.
+            max_temp: the max (initial) temperature.
+            min_temp: the min (final) temperature.
+            sample_soft: if False, the model does a hard operation after the specified steps.
+        """
         super().__init__()
         self.steps = steps
         self.min_temp = min_temp
         self.max_temp = max_temp
         self.sample_soft = sample_soft
 
-        # Initialize; Store it in the model state_dict
+        # Initialize to nn Parameter to store it in the model state_dict
         self.tau = nn.Parameter(torch.tensor(max_temp, dtype=torch.float32), requires_grad=False)
 
     def forward(self, logits, dim=-1):
-        # During training and under annealing, then run softly
+        # During training and under annealing, run a soft max operation
         if self.sample_soft or (self.training and self.tau.item() > self.min_temp):
             return self.forward_with_tau(logits, dim=dim)
 
-        # In test time, sample hardly
+        # In test time, sample a hard max
         with torch.no_grad():
             return self.discrete_op(logits, dim=dim)
 
@@ -252,25 +265,27 @@ class _Temp(nn.Module):
 
 
 class SMTemp(_Temp):
-    ''' Softmax with temperature scaling '''
+    """Softmax with temperature annealing."""
     def forward_with_tau(self, logits, dim):
         return F.softmax(logits / self.tau.item(), dim=dim)
 
 
 class GSMTemp(_Temp):
-    ''' Gumbel Softmax with temperature scaling '''
+    """Gumbel Softmax with temperature annealing."""
     def forward_with_tau(self, logits, dim):
         return F.gumbel_softmax(logits, tau=self.tau.item(), dim=dim)
 
 
 class EM15Temp(_Temp):
-    ''' EntMax15 with temperature scaling '''
+    """EntMax15 with temperature annealing."""
     def forward_with_tau(self, logits, dim):
         return entmax15(logits / self.tau.item(), dim=dim)
 
 
 class EMoid15Temp(_Temp):
+    """Entmoid with temperature annealing."""
     def __init__(self, **kwargs):
+        # It always does soft operation.
         kwargs['sample_soft'] = True
         super().__init__(**kwargs)
 
@@ -293,7 +308,7 @@ class Lambda(nn.Module):
 
 
 class ModuleWithInit(nn.Module):
-    """ Base class for pytorch module with data-aware initializer on first batch """
+    """Base class for pytorch module with data-aware initializer on first batch."""
     def __init__(self):
         super().__init__()
         self._is_initialized_tensor = nn.Parameter(torch.tensor(0, dtype=torch.float32), requires_grad=False)
@@ -305,7 +320,7 @@ class ModuleWithInit(nn.Module):
         # I change the type to torch.float32 to use apex 16 precision training
 
     def initialize(self, *args, **kwargs):
-        """ initialize module tensors using first batch of data """
+        """initialize module tensors using first batch of data."""
         raise NotImplementedError("Please implement ")
 
     def __call__(self, *args, **kwargs):

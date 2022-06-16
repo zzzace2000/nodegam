@@ -6,6 +6,9 @@ results/
 data/
 logs/
 loss_figs/
+pid_ref/
+run.sh
+test.py
 
 # node and NPM
 npm-debug.log

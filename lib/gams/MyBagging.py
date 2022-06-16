@@ -1,10 +1,13 @@
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
 import numpy as np
-import pandas as pd
 from sklearn.ensemble import BaggingClassifier, BaggingRegressor
 
-from .utils import get_GAM_df_by_models, sigmoid
+from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, \
+    OnehotEncodingClassifierMixin, OnehotEncodingRegressorMixin
 from .base import eps, MyGAMPlotMixinBase, MyCommonBase
-from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, OnehotEncodingClassifierMixin, OnehotEncodingRegressorMixin
+from .utils import get_GAM_df_by_models, sigmoid
 
 
 class MyBaggingMixin(MyGAMPlotMixinBase):

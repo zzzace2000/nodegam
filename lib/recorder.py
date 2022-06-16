@@ -1,12 +1,22 @@
-import time
-from os.path import join as pjoin, exists as pexists
-import os
+"""A simple recorder to store the model's training progress."""
+
 import json
+import os
+from os.path import join as pjoin, exists as pexists
+
 import numpy as np
 
 
 class Recorder(object):
     def __init__(self, path):
+        """A recorder to store the model's training progress.
+
+        Useful to resume training if interuppted by the scheduler. It will reload the record if
+        previous record exists.
+
+        Args:
+            path: the path to store the record.
+        """
         self.path = path
         self.file_path = pjoin(self.path, 'recorder.json')
 
@@ -21,6 +31,7 @@ class Recorder(object):
             self.load_record()
 
     def save_record(self):
+        """Save the record."""
         with open(self.file_path, 'w') as op:
             json.dump({
                 'best_err': self.best_err,
@@ -34,6 +45,7 @@ class Recorder(object):
         np.save(pjoin(self.path, 'err_history.npy'), self.err_history)
 
     def load_record(self):
+        """Load the record."""
         with open(self.file_path) as fp:
             record = json.load(fp)
 
@@ -59,6 +71,7 @@ class Recorder(object):
             self.run_time = record['run_time']
 
     def clear(self):
+        """Remove the record."""
         if pexists(pjoin(self.path, 'loss_history.npy')):
             os.remove(pjoin(self.path, 'loss_history.npy'))
         if pexists(pjoin(self.path, 'err_history.npy')):

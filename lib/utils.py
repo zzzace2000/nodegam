@@ -1,50 +1,40 @@
-import os
+"""All utilities including minibatches, files, seeds, model storages, and GAM extractions."""
+
+import contextlib
+import gc
 import glob
 import hashlib
-import gc
-import time
-import numpy as np
-import requests
-import contextlib
-from tqdm import tqdm
-import torch
+import json
+import os
+import pickle
 import random
+import time
 from logging import log
 from os.path import join as pjoin, exists as pexists
 
-import json
-import pickle
+import numpy as np
 import pandas as pd
+import torch
+
 from .gams.utils import extract_GAM, bin_data
-
-
-def download(url, filename, delete_if_interrupted=True, chunk_size=4096):
-    """ saves file from url to filename with a fancy progressbar """
-    try:
-        with open(filename, "wb") as f:
-            print("Downloading {} > {}".format(url, filename))
-            response = requests.get(url, stream=True)
-            total_length = response.headers.get('content-length')
-
-            if total_length is None:  # no content length header
-                f.write(response.content)
-            else:
-                total_length = int(total_length)
-                with tqdm(total=total_length) as progressbar:
-                    for data in response.iter_content(chunk_size=chunk_size):
-                        if data:  # filter-out keep-alive chunks
-                            f.write(data)
-                            progressbar.update(len(data))
-    except Exception as e:
-        if delete_if_interrupted:
-            print("Removing incomplete download {}.".format(filename))
-            os.remove(filename)
-        raise e
-    return filename
 
 
 def iterate_minibatches(*tensors, batch_size, shuffle=True, epochs=1,
                         allow_incomplete=True, callback=lambda x:x):
+    """Run the minibatches.
+
+    Args:
+        *tensors: the tensors to run minibatch.
+        batch_size: the batch size.
+        shuffle: if True, shuffle the tensors before each epoch starts.
+        epochs: the number of epochs to iterate minibatches.
+        allow_incomplete: if True, the last batch of each epoch can be smaller than the batch_size.
+        callback: f(list of batch start idxes). Could be useful to change the batch start idxes.
+
+    Example:
+        >>> for x, y in iterate_minibatches(X, Y, batch_size=256, shuflle=True, epochs=10):
+        >>>     train(x, y)
+    """
     indices = np.arange(len(tensors[0]))
     upper_bound = int((np.ceil if allow_incomplete else np.floor) (len(indices) / batch_size)) * batch_size
     epoch = 0
@@ -62,13 +52,16 @@ def iterate_minibatches(*tensors, batch_size, shuffle=True, epochs=1,
 
 
 def process_in_chunks(function, *args, batch_size, out=None, **kwargs):
-    """
-    Computes output by applying batch-parallel function to large data tensor in chunks
-    :param function: a function(*[x[indices, ...] for x in args]) -> out[indices, ...]
-    :param args: one or many tensors, each [num_instances, ...]
-    :param batch_size: maximum chunk size processed in one go
-    :param out: memory buffer for out, defaults to torch.zeros of appropriate size and type
-    :returns: function(data), computed in a memory-efficient way
+    """Computes output by applying batch-parallel function to large data tensor in chunks.
+
+    Args:
+        function: a function(*[x[indices, ...] for x in args]) -> out[indices, ...].
+        args: one or many tensors, each [num_instances, ...].
+        batch_size: maximum chunk size processed in one go.
+        out: memory buffer for out, defaults to torch.zeros of appropriate size and type.
+
+    Returns:
+        out: the outputs of function(data), computed in a memory-efficient (mini-batch) way.
     """
     total_size = args[0].shape[0]
     first_output = function(*[x[0: batch_size] for x in args])
@@ -85,7 +78,7 @@ def process_in_chunks(function, *args, batch_size, out=None, **kwargs):
 
 
 def check_numpy(x):
-    """ Makes sure x is a numpy array """
+    """Makes sure x is a numpy array. If not, make it as one."""
     if isinstance(x, torch.Tensor):
         x = x.detach().cpu().numpy()
     x = np.asarray(x)
@@ -99,6 +92,11 @@ def nop_ctx():
 
 
 def get_latest_file(pattern):
+    """Get the lattest files under the regex pattern.
+
+    Args:
+        pattern: the regex pattern. E.g. '*.csv'.
+    """
     list_of_files = glob.glob(pattern) # * means all if need specific format then *.csv
     if len(list_of_files) == 0:
         print('No files found!')
@@ -107,7 +105,7 @@ def get_latest_file(pattern):
 
 
 def md5sum(fname):
-    """ Computes mdp checksum of a file """
+    """Computes mdp checksum of a file."""
     hash_md5 = hashlib.md5()
     with open(fname, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -116,7 +114,7 @@ def md5sum(fname):
 
 
 def free_memory(sleep_time=0.1):
-    """ Black magic function to free torch memory and some jupyter whims """
+    """Black magic function to free torch memory and some jupyter whims."""
     gc.collect()
     torch.cuda.synchronize()
     gc.collect()
@@ -131,10 +129,13 @@ def to_float_str(element):
 
 
 def seed_everything(seed=None) -> int:
-    """
-    Borrow it from the pytorch_lightning project
-    Function that sets seed for pseudo-random number generators  in:
-    pytorch, numpy, python.random and sets PYTHONHASHSEED environment variable.
+    """Seed everything.
+
+    It includes pytorch, numpy, python.random and sets PYTHONHASHSEED environment variable. Borrow
+    it from the pytorch_lightning.
+
+    Args:
+        seed: the seed. If None, it generates one.
     """
     max_seed_value = np.iinfo(np.uint32).max
     min_seed_value = np.iinfo(np.uint32).min
@@ -168,6 +169,16 @@ def _select_seed_randomly(min_seed_value: int = 0, max_seed_value: int = 255) ->
 
 
 def output_csv(the_path, data_dict, order=None, delimiter=','):
+    """Output a csv file from a python dictionary.
+
+    If the csv file exists, it outputs another row under this csv file.
+
+    Args:
+        the_path: the filename of the csv file.
+        data_dict: the data dictionary.
+        order: if specified, the columns of the csv follow the specified order. Default: None.
+        delimiter: the seperated delimiter. Defulat: ','.
+    """
     if the_path.endswith('.tsv'):
         delimiter = '\t'
 
@@ -212,6 +223,18 @@ def output_csv(the_path, data_dict, order=None, delimiter=','):
 
 class Timer:
     def __init__(self, name, remove_start_msg=True):
+        """A simple timer.
+
+        Args:
+            name: the name of the timer.
+            remove_start_msg: if True, it will remove the start message of running.
+
+        Usage:
+            >>> with Timer('model training'):
+            >>>     train()
+            Run model training.........
+            Finish model training in 1.3s
+        """
         self.name = name
         self.remove_start_msg = remove_start_msg
 
@@ -227,13 +250,16 @@ class Timer:
 
 
 def load_best_model_from_trained_dir(the_dir):
-    ''' Follow the model architecture in main.py '''
-    if not pexists(pjoin(the_dir, 'MY_IS_FINISHED')):
-        with Timer('copying from v'):
-            cmd = 'rsync -avzL v:/h/kingsley/node/%s/ %s' % (the_dir, the_dir)
-            print(cmd)
-            os.system(cmd)
+    """Load the best NodeGAM model from a trained directory.
 
+    Follow the filenames of checkpoints in 'main.py'.
+
+    Args:
+        the_dir: the saved direcotry.
+
+    Returns:
+        model: a pytorch NodeGAM model.
+    """
     hparams = load_hparams(the_dir)
 
     from . import arch
@@ -258,6 +284,16 @@ def load_best_model_from_trained_dir(the_dir):
 
 
 def extract_GAM_from_saved_dir(saved_dir, max_n_bins=256, **kwargs):
+    """Extract the GAM dataframe from a saved model directory (either NodeGAM or EBM or Spline).
+
+    Args:
+        saved_dir: the saved directory.
+        max_n_bins: max number of bins for each feature when extracting.
+        kwargs: additional arguments passed into NodeGAM.extract_additive_terms().
+
+    Returns:
+        df: a GAM dataframe.
+    """
     if not pexists(saved_dir) or not pexists(pjoin(saved_dir, 'hparams.json')):
         with Timer('copying from v'):
             cmd = 'rsync -avzL v:/h/kingsley/node/%s/ %s' % (
@@ -279,10 +315,24 @@ def extract_GAM_from_saved_dir(saved_dir, max_n_bins=256, **kwargs):
 
 
 def extract_GAM_from_NODE(saved_dir, max_n_bins=256, way='blackbox', cache=False, **kwargs):
+    """Extract the GAM dataframe from the NodeGAM model.
+
+    Args:
+        saved_dir: the saved directory of the NodeGAM.
+        max_n_bins: max number of bins of each feature.
+        way: choice from ['blackbox', 'mine']. 'blackbox' treats the model as a blackbox to extract
+            a GAM dataframe. 'mine' can only be applied to NodeGAM that uses the internal knowledge
+            of NodeGAM to extract the GAM/GA2M dataframe.
+        cache: if True, it stores 'df_cache_bins{max_n_bins}.pkl' under the saved_dir.
+        kwargs: the additional arguments when calling model.extract_additive_terms().
+    
+    Returns:
+        df: the GAM dataframe.
+    """
     if max_n_bins is None:
         max_n_bins = -1
 
-    cache_path = pjoin(saved_dir, f'df_cache_bins{max_n_bins}_blackbox.pkl')
+    cache_path = pjoin(saved_dir, f'df_cache_bins{max_n_bins}.pkl')
     if pexists(cache_path):
         with open(cache_path, 'rb') as fp, Timer(f'load cache: {cache_path}'):
             return pickle.load(fp)
@@ -303,6 +353,7 @@ def extract_GAM_from_NODE(saved_dir, max_n_bins=256, way='blackbox', cache=False
     if max_n_bins is not None and max_n_bins > 0:
         all_X = bin_data(all_X, max_n_bins=max_n_bins)
 
+    # If it's a GA2M, can only use 'mine' method to extract
     if hparams.get('ga2m', 0):
         way = 'mine'
 
@@ -341,6 +392,15 @@ def extract_GAM_from_NODE(saved_dir, max_n_bins=256, way='blackbox', cache=False
 
 
 def make_predictions(model_name, X):
+    """Make predictions of some model.
+
+    Args:
+        model_name: the model name. It's saved under logs/{model_name}/.
+        X: the input data. Type: pandas dataframe.
+
+    Returns:
+        ret: the prediction on X. Type: numpy array.
+    """
     saved_dir = pjoin('logs', model_name)
     hparams = json.load(open(pjoin(saved_dir, 'hparams.json')))
 
@@ -366,6 +426,15 @@ def make_predictions(model_name, X):
     return ret
 
 def extract_GAM_from_baselines(saved_dir, max_n_bins=256, **kwargs):
+    """Extract the dataframe from other GAM baselines like EBM and Spline.
+
+    Args:
+        saved_dir: the saved model's directory.
+        max_n_bins: the max number of bins for each feature.
+
+    Returns:
+        df: the GAM dataframe.
+    """
     from .data import DATASETS
     model = pickle.load(open(pjoin(saved_dir, 'model.pkl'), 'rb'))
 
@@ -397,6 +466,7 @@ def extract_GAM_from_baselines(saved_dir, max_n_bins=256, **kwargs):
 
 
 def load_hparams(the_dir):
+    """Load the hyperparameters (hparams) from a directory."""
     if pexists(pjoin(the_dir, 'hparams.json')):
         hparams = json.load(open(pjoin(the_dir, 'hparams.json')))
     else:
@@ -421,6 +491,14 @@ def average_GAMs(gam_dirs, **kwargs):
 
 
 def average_GAM_dfs(all_dfs):
+    """Take average of GAM dataframes to derive mean and stdev for each term.
+
+    Args:
+        all_dfs: a list of dataframes.
+
+    Returns:
+        df: the averaged dataframe with mean, stdev and the importance.
+    """
     first_df = all_dfs[0]
     if len(all_dfs) == 1:
         return first_df
@@ -476,9 +554,18 @@ def average_GAM_dfs(all_dfs):
 
 
 def get_gpu_stat(pitem: str, device_id=0):
-    ''' Borrow from pytorch lightning:
-        https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.9.0/pytorch_lightning/callbacks/gpu_usage_logger.py#L30-L166
-    '''
+    """Get the GPU stats.
+
+    Borrow from pytorch lightning:
+    https://github.com/PyTorchLightning/PyTorch-Lightning/blob/0.9.0/pytorch_lightning/callbacks/gpu_usage_logger.py#L30-L166
+
+    Args:
+        pitem: the gpu partition.
+        device_id: the device id of gpu.
+
+    Returns:
+        gpu_usage: the GPU memory consumption.
+    """
     import subprocess
     result = subprocess.run(
         ["nvidia-smi", f"--query-gpu={pitem}", "--format=csv,nounits,noheader"],

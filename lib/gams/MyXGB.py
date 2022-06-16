@@ -1,12 +1,11 @@
-import numpy as np
-import pandas as pd
-from xgboost import XGBClassifier, XGBRegressor
-from sklearn.model_selection import train_test_split
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
 
-from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, OnehotEncodingClassifierMixin, OnehotEncodingRegressorMixin
+
+from xgboost import XGBClassifier, XGBRegressor
+
+from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, \
+    OnehotEncodingClassifierMixin, OnehotEncodingRegressorMixin
 from .base import MyGAMPlotMixinBase
-from .utils import sigmoid
-import copy
 
 
 class MyXGBMixin(object):

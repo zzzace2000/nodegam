@@ -1,3 +1,6 @@
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -118,9 +121,9 @@ def cal_statistics(table, is_metric_higher_better, add_ns_baseline=False):
 
 
 def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=False, call_backs=None, 
-                     feature_names=None, figsize=None, removed_feature_names=None, 
-                     vertical_margin=2, horizontal_margin=2, top_main=-1, top_interactions=0,
-                     only_interactions=False, sort_by_imp=False, show_density=False):
+                     feature_idxes=None, figsize=None, feature_names=None,
+                     vertical_margin=2, horizontal_margin=2, top_main=-1, top_interactions=-1,
+                     only_interactions=False, sort_by_imp=False, show_density=True):
     if model_names is None:
         model_names = list(all_dfs.keys())
     else:
@@ -128,31 +131,33 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
 
     first_df = all_dfs[next(iter(all_dfs))]
     first_df = first_df[first_df.feat_idx != -1] # Remove bias first
-    if only_non_binary:
-        first_df = first_df[first_df.x.apply(lambda x: x is not None and len(x) > 2)]
+    if feature_idxes is not None:
+        first_df = first_df[first_df.feat_idx.apply(lambda x: x in feature_idxes)]
+        first_df['feat_idx'] = pd.Categorical(first_df['feat_idx'], feature_idxes)
+        first_df = first_df.sort_values('feat_idx')
+    else:
+        if only_non_binary:
+            first_df = first_df[first_df.x.apply(lambda x: x is not None and len(x) > 2)]
+        if feature_names is not None:
+            first_df = first_df[first_df.feat_name.apply(lambda x: x in feature_names)]
 
-    # Handle main effect
-    df_main = first_df[first_df.feat_idx.apply(lambda x: not isinstance(x, tuple))]
-    if sort_by_imp:
-        df_main = df_main.sort_values('importance', ascending=False)
-    if top_main >= 0:
-        df_main = df_main.iloc[:top_main]
+        # Handle main effect
+        df_main = first_df[first_df.feat_idx.apply(lambda x: not isinstance(x, tuple))]
+        if sort_by_imp:
+            df_main = df_main.sort_values('importance', ascending=False)
+        if top_main >= 0:
+            df_main = df_main.iloc[:top_main]
 
-    df_iter = first_df[first_df.feat_idx.apply(lambda x: isinstance(x, tuple))]
-    if top_interactions >= 0:
-        df_iter = df_iter.sort_values('importance', ascending=False).iloc[:top_interactions]
-    first_df = pd.concat([df_main, df_iter], axis=0)
+        df_iter = first_df[first_df.feat_idx.apply(lambda x: isinstance(x, tuple))]
+        if top_interactions >= 0:
+            df_iter = df_iter.sort_values('importance', ascending=False).iloc[:top_interactions]
+        first_df = pd.concat([df_main, df_iter], axis=0)
 
-    if only_interactions:
-        first_df = first_df[first_df.feat_idx.apply(lambda x: isinstance(x, tuple))]
-
-    if feature_names is not None:
-        first_df = first_df[first_df.feat_name.apply(lambda x: x in feature_names)]
-
-    if removed_feature_names is not None:
-        first_df = first_df[first_df.feat_name.apply(lambda x: x not in removed_feature_names)]
+        if only_interactions:
+            first_df = first_df[first_df.feat_idx.apply(lambda x: isinstance(x, tuple))]
 
     num_rows = int(np.ceil((len(first_df)) / num_cols))
+
     if figsize is None:
         figsize = (5 * num_cols + horizontal_margin * (num_cols - 1),
                    3 * num_rows + vertical_margin * (num_rows-1))
@@ -199,16 +204,6 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
                 # Rotate back to 0
                 for tick in the_ax.get_xticklabels():
                     tick.set_rotation(0)
-
-                # if it's a boolean, set the rotation back
-    #             if len(the_df_lookups[model_names[0]].loc[feat_name].x) == 2:
-    #                 the_ax.set_xticklabels([0, 1])
-    #                 for tick in the_ax.get_xticklabels():
-    #                     tick.set_rotation(0)
-
-                # sns.barplot(x='x', y='y', hue='model_name', data=all_plot_dfs, ax=the_ax)
-                # for tick in the_ax.get_xticklabels():
-                #     tick.set_rotation(45)
             else:
                 for model_name in model_names:
                     if model_name not in all_dfs:
@@ -216,6 +211,8 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
                         continue
 
                     the_df_lookup = the_df_lookups[model_name]
+                    if row.feat_idx not in the_df_lookup.index:
+                        continue
 
                     y_std = 0 if 'y_std' not in the_df_lookup.loc[row.feat_idx] \
                         else the_df_lookup.loc[row.feat_idx].y_std
@@ -256,14 +253,8 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
                         the_ax.add_patch(rect)
 
                 shade_by_density_blocks()
-                # den_ax = axes[fig_idx1 + 1, fig_idx2]
-                # min_width = (np.array(row.x[1:]) - np.array(row.x[:-1])).min()
-                # width = max(min_width / 2, 0.005)
-                # den_ax.bar(row.x, row.counts, width=width)
-                # den_ax.set_ylabel('counts')
 
         else: # interaction effect
-            # print('We only plot the first df in interaction term')
             all_x = [t[0] for t in row.x]
             all_y = [t[1] for t in row.x]
 
@@ -276,15 +267,9 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
 
             x_len, y_len = len(set(all_x)), len(set(all_y))
             if x_len > 4 and y_len > 4:
-                # Plot the scatter plot
-                # if x_len >= y_len:
                 cax = sns.scatterplot(x=all_x, y=all_y, hue=row.y, palette='RdBu', ax=the_ax, s=50)
                 the_ax.set_xlabel(feat_names[0])
                 the_ax.set_ylabel(feat_names[1])
-                # else:
-                #     cax = sns.scatterplot(x=all_y, y=all_x, hue=row.y, palette='RdBu', ax=the_ax, s=50)
-                #     the_ax.set_xlabel(feat_names[1])
-                #     the_ax.set_ylabel(feat_names[0])
 
                 vlim = np.max(np.abs(row.y))
                 norm = plt.Normalize(-vlim, vlim)
@@ -293,7 +278,6 @@ def vis_main_effects(all_dfs, num_cols=4, model_names=None, only_non_binary=Fals
 
                 # Remove the legend and add a colorbar
                 cax.get_legend().remove()
-                # the_ax.get_legend().remove()
                 cax.figure.colorbar(sm, ax=the_ax)
 
             elif x_len <= 4 and x_len < y_len:

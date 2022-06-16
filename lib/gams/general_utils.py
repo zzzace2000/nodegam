@@ -1,6 +1,9 @@
-import time, os
-import numpy as np
-import json
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
+import os
+import time
+
 
 class Timer:
     def __init__(self, name, remove_start_msg=True):

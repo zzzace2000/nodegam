@@ -1,3 +1,5 @@
+"""The trainer to optimize the model."""
+
 import glob
 import os
 import time
@@ -26,20 +28,24 @@ class Trainer(nn.Module):
     def __init__(self, model, experiment_name=None, warm_start=False,
                  Optimizer=torch.optim.Adam, optimizer_params={},
                  lr=0.01, lr_warmup_steps=-1, verbose=False,
-                 n_last_checkpoints=1, step_callbacks=[], fp16=0,
+                 n_last_checkpoints=5, step_callbacks=[], fp16=0,
                  problem='classification', pretraining_ratio=0.15,
                  masks_noise=0.1, opt_only_last_layer=False, freeze_steps=0, **kwargs):
-        """
-        :type model: torch.nn.Module
-        :param experiment_name: a path where all logs and checkpoints are saved
-        :param warm_start: when set to True, loads last checpoint
-        :param Optimizer: function(parameters) -> optimizer
-        :param verbose: when set to True, produces logging information
-        :param problem : str
-            Problem type. Chosen from ['classification', 'regression', 'pretrain']
-        :param pretraining_ratio : float
-            Between 0 and 1, percentage of feature to mask for reconstruction.
-            Only used when problem == 'pretrain'
+        """Trainer.
+
+        Args:
+            model: the model. Type: torch.nn.Module.
+            experiment_name: a path where all logs and checkpoints are saved.
+            warm_start: when set to True, loads the last checkpoint.
+            Optimizer: function(parameters) -> optimizer. Default: torch.optim.Adam.
+            optimizer_params: parameter when intializing optimizer. Usage:
+                Optimizer(**optimizer_params).
+            verbose: when set to True, produces logging information.
+            n_last_checkpoints: the last few checkpoints to do model averaging.
+            step_callbacks: function(step). Will be called after each optimization step.
+            problem: problem type. Chosen from ['classification', 'regression', 'pretrain'].
+            pretraining_ratio: the percentage of feature to mask for reconstruction. Between 0 and
+                1. Only used when problem == 'pretrain'.
         """
         super().__init__()
         self.model = model
@@ -68,8 +74,7 @@ class Trainer(nn.Module):
 
         if problem == 'classification':
             # In my datasets I only have binary classification
-            self.loss_function = \
-                (lambda x, y: F.binary_cross_entropy_with_logits(x, y.float()))
+            self.loss_function = (lambda x, y: F.binary_cross_entropy_with_logits(x, y.float()))
         elif problem == 'regression':
             self.loss_function = F.mse_loss
         elif problem.startswith('pretrain'): # Not used
@@ -141,17 +146,18 @@ class Trainer(nn.Module):
         if path is None:
             return None
 
-        # File not saved correctly
-        if os.stat(path).st_size == 0 \
-                or len(glob.glob(pattern)) > self.n_last_checkpoints:
+        # Remove files not saved correctly
+        if os.stat(path).st_size == 0 or len(glob.glob(pattern)) > self.n_last_checkpoints:
             os.remove(path)
             path = self.get_latest_file(pattern)
 
         return path
 
     def average_checkpoints(self, tags=None, paths=None, out_tag='avg', out_path=None):
-        assert tags is None or paths is None, "please provide either tags or paths or nothing, not both"
-        assert out_tag is not None or out_path is not None, "please provide either out_tag or out_path or both, not nothing"
+        assert tags is None or paths is None, \
+            "please provide either tags or paths or nothing, not both"
+        assert out_tag is not None or out_path is not None, \
+            "please provide either out_tag or out_path or both, not nothing"
         if tags is None and paths is None:
             paths = self.get_latest_checkpoints(
                 pjoin(self.experiment_path, 'checkpoint_temp_[0-9]*.pth'), self.n_last_checkpoints)
@@ -179,7 +185,8 @@ class Trainer(nn.Module):
     def remove_old_temp_checkpoints(self, number_ckpts_to_keep=None):
         if number_ckpts_to_keep is None:
             number_ckpts_to_keep = self.n_last_checkpoints
-        paths = self.get_latest_checkpoints(pjoin(self.experiment_path, 'checkpoint_temp_[0-9]*.pth'))
+        paths = self.get_latest_checkpoints(pjoin(self.experiment_path,
+                                                  'checkpoint_temp_[0-9]*.pth'))
         paths_to_delete = paths[number_ckpts_to_keep:]
 
         for ckpt in paths_to_delete:
@@ -235,8 +242,7 @@ class Trainer(nn.Module):
         if update:
             self.opt.step()
             self.step += 1
-            # self.writer.add_scalar('train loss', loss.item(), self.step)
-        
+
         return {'loss': loss.item()}
 
     def mask_input(self, x_batch):
@@ -245,8 +251,8 @@ class Trainer(nn.Module):
         ).to(x_batch.device)
 
         infills = 0.
-        # To make it more difficult, 10% of the time we do not mask the inputs!
-        # Similar to BERT tricks.
+        # To make it more difficult, 10% of the time we do not mask the inputs! Similar to BERT
+        # tricks.
         new_masks = masks
         if self.masks_noise > 0.:
             new_masks = torch.bernoulli((1. - self.masks_noise) * masks)

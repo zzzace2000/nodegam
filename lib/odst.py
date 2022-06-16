@@ -1,61 +1,69 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
+"""Implementation of NODE-GAM layer."""
 
-from .nn_utils import sparsemax, sparsemoid, ModuleWithInit, entmax15, entmoid15
-from .utils import check_numpy
 from warnings import warn
 
+import numpy as np
+import torch
+import torch.nn as nn
 
+from .nn_utils import ModuleWithInit, entmax15, entmoid15
+from .utils import check_numpy
+
+# Set the min logits to -20
 MIN_LOGITS = -20
 
 
 class ODST(ModuleWithInit):
-    def __init__(self, input_dim, num_trees, depth=6, tree_dim=1, flatten_output=True,
+    def __init__(self, input_dim, num_trees, depth=6, tree_dim=1,
                  choice_function=entmax15, bin_function=entmoid15,
                  initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_,
                  threshold_init_beta=1.0, threshold_init_cutoff=1.0,
-                 colsample_bytree=1., **kwargs
+                 colsample_bytree=1.,
                  ):
-        """
-        Oblivious Differentiable Sparsemax Trees. http://tinyurl.com/odst-readmore
+        """Oblivious Differentiable Sparsemax Trees. http://tinyurl.com/odst-readmore.
+
         One can drop (sic!) this module anywhere instead of nn.Linear
-        :param input_dim: number of features in the input tensor
-        :param num_trees: number of trees in this layer
-        :param tree_dim: number of response channels in the response of individual tree
-        :param depth: number of splits in every tree
-        :param flatten_output: if False, returns [..., num_trees, tree_dim],
-            by default returns [..., num_trees * tree_dim]
-        :param choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t. f(tensor, dim).sum(dim) == 1
-        :param bin_function: f(tensor) -> R[0, 1], computes tree leaf weights
 
-        :param initialize_response_: in-place initializer for tree output tensor
-        :param initialize_selection_logits_: in-place initializer for logits that select features for the tree
-        both thresholds and scales are initialized with data-aware init (or .load_state_dict)
-        :param threshold_init_beta: initializes threshold to a q-th quantile of data points
-            where q ~ Beta(:threshold_init_beta:, :threshold_init_beta:)
-            If this param is set to 1, initial thresholds will have the same distribution as data points
-            If greater than 1 (e.g. 10), thresholds will be closer to median data value
-            If less than 1 (e.g. 0.1), thresholds will approach min/max data values.
-
-        :param threshold_init_cutoff: threshold log-temperatures initializer, \in (0, inf)
-            By default(1.0), log-remperatures are initialized in such a way that all bin selectors
-            end up in the linear region of sparse-sigmoid. The temperatures are then scaled by this parameter.
-            Setting this value > 1.0 will result in some margin between data points and sparse-sigmoid cutoff value
-            Setting this value < 1.0 will cause (1 - value) part of data points to end up in flat sparse-sigmoid region
-            For instance, threshold_init_cutoff = 0.9 will set 10% points equal to 0.0 or 1.0
-            Setting this value > 1.0 will result in a margin between data points and sparse-sigmoid cutoff value
-            All points will be between (0.5 - 0.5 / threshold_init_cutoff) and (0.5 + 0.5 / threshold_init_cutoff)
-
-        :param colsample_bytree: the same argument as in xgboost package.
-            If less than 1, for each tree, it will only choose a fraction of features to train. For instance,
-            if colsample_bytree = 0.9, each tree will only selects among 90% of the features.
+        Args:
+            input_dim: number of features in the input tensor.
+            num_trees: number of trees in this layer.
+            tree_dim: number of response channels in the response of individual tree.
+            depth: number of splits in every tree.
+            flatten_output: if False, returns [..., num_trees, tree_dim], by default returns
+                [..., num_trees * tree_dim].
+            choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
+                f(tensor, dim).sum(dim) == 1.
+            bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
+            initialize_response_: in-place initializer for tree output tensor.
+            initialize_selection_logits_: in-place initializer for logits that select features for
+                the tree. Both thresholds and scales are initialized with data-aware init
+                (or .load_state_dict).
+            threshold_init_beta: initializes threshold to a q-th quantile of data points where
+                q ~ Beta(:threshold_init_beta:, :threshold_init_beta:). If this param is set to 1,
+                initial thresholds will have the same distribution as data points. If greater than 1
+                (e.g. 10), thresholds will be closer to median data value. If less than 1
+                (e.g. 0.1), thresholds will approach min/max data values.
+            threshold_init_cutoff: threshold log-temperatures initializer, \in (0, inf)
+                By default(1.0), log-remperatures are initialized in such a way that all bin
+                selectors end up in the linear region of sparse-sigmoid. The temperatures are then
+                scaled by this parameter.
+                - Setting this value > 1.0 will result in some margin between data points and
+                    sparse-sigmoid cutoff value.
+                - Setting this value < 1.0 will cause (1 - value) part of data points to end up in
+                    flat sparse-sigmoid region. For instance, threshold_init_cutoff = 0.9 will set
+                    10% points equal to 0.0 or 1.0.
+                - Setting this value > 1.0 will result in a margin between data points and
+                    sparse-sigmoid cutoff value. All points will be between
+                    (0.5 - 0.5 / threshold_init_cutoff) and (0.5 + 0.5 / threshold_init_cutoff).
+            colsample_bytree: the random proportion of features allowed in each tree. The same
+                argument as in xgboost package. If less than 1, for each tree, it will only choose a
+                fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
+                will only selects among 90% of the features.
         """
         super().__init__()
-        self.input_dim, self.depth, self.num_trees, self.tree_dim, self.flatten_output = \
-            input_dim, depth, num_trees, tree_dim, flatten_output
+        self.input_dim, self.depth, self.num_trees, self.tree_dim = \
+            input_dim, depth, num_trees, tree_dim
         self.choice_function, self.bin_function = choice_function, bin_function
         self.threshold_init_beta, self.threshold_init_cutoff = threshold_init_beta, threshold_init_cutoff
         self.colsample_bytree = colsample_bytree
@@ -126,15 +134,18 @@ class ODST(ModuleWithInit):
         response = torch.einsum('bnd,ncd->bnc', response_weights, self.response)
         # ^-- [batch_size, num_trees, tree_dim]
 
-        return response.flatten(1, 2) if self.flatten_output else response
+        return response.flatten(1, 2)
+        # ^-- [batch_size, num_trees * tree_dim]
 
     def initialize(self, input, eps=1e-6):
         # data-aware initializer
         assert len(input.shape) == 2
         if input.shape[0] < 1000:
-            warn("Data-aware initialization is performed on less than 1000 data points. This may cause instability."
-                 "To avoid potential problems, run this model on a data batch with at least 1000 data samples."
-                 "You can do so manually before training. Use with torch.no_grad() for memory efficiency.")
+            warn("Data-aware initialization is performed on less than 1000 data points. This may "
+                 "cause instability. To avoid potential problems, run this model on a data batch "
+                 "with at least 1000 data samples. You can do so manually before training. Use with"
+                 " torch.no_grad() for memory efficiency.")
+
         with torch.no_grad():
             feature_values = self.get_feature_selection_values(input)
             # ^--[batch_size, num_trees, depth]
@@ -143,11 +154,13 @@ class ODST(ModuleWithInit):
             percentiles_q = 100 * np.random.beta(self.threshold_init_beta, self.threshold_init_beta,
                                                  size=[self.num_trees, self.depth])
             self.feature_thresholds.data[...] = torch.as_tensor(
-                list(map(np.percentile, check_numpy(feature_values.flatten(1, 2).t()), percentiles_q.flatten())),
+                list(map(np.percentile, check_numpy(feature_values.flatten(1, 2).t()),
+                         percentiles_q.flatten())),
                 dtype=feature_values.dtype, device=feature_values.device
             ).view(self.num_trees, self.depth)
 
-            # init temperatures: make sure enough data points are in the linear region of sparse-sigmoid
+            # init temperatures: make sure enough data points are in the linear region of
+            # sparse-sigmoid
             temperatures = np.percentile(check_numpy(abs(feature_values - self.feature_thresholds)),
                                          q=100 * min(1.0, self.threshold_init_cutoff), axis=0)
 
@@ -156,68 +169,113 @@ class ODST(ModuleWithInit):
             self.log_temperatures.data[...] = torch.log(torch.as_tensor(temperatures) + eps)
 
     def get_feature_selection_values(self, input):
-        ''' Select which features to split '''
+        """Get the selected features of each tree.
+
+        Args:
+            input: input data of shape [batch_size, input_dim].
+
+        Returns:
+            feature_values: the feature input to trees in a batch.
+            Shape: [batch_size, num_trees, tree_depth].
+        """
         feature_selectors = self.get_feature_selectors()
         # ^--[input_dim, num_trees, depth]
 
         feature_values = torch.einsum('bi,ind->bnd', input, feature_selectors)
+        # ^--[batch_size, num_trees, depth]
+
         return feature_values
 
     def get_feature_selectors(self):
+        """Get the feature selectors of each tree of each depth.
+
+        Returns:
+            feature_selectors: tensor of shape [input_dim, num_trees, tree_depth]. The values of
+                first dimension sum to 1.
+        """
         if self.colsample_bytree < 1. and self.num_sample_feats == 1:
             return self.colsample.data
 
         fsl = self.feature_selection_logits
         if self.colsample_bytree < 1.:
-            fsl = self.colsample * fsl \
-                  + (1. - self.colsample) * MIN_LOGITS
+            fsl = self.colsample * fsl + (1. - self.colsample) * MIN_LOGITS
         feature_selectors = self.choice_function(fsl, dim=0)
         return feature_selectors
 
     def __repr__(self):
-        return "{}(input_dim={}, num_trees={}, depth={}, tree_dim={}, flatten_output={})".format(
+        return "{}(input_dim={}, num_trees={}, depth={}, tree_dim={})".format(
             self.__class__.__name__, self.input_dim,
-            self.num_trees, self.depth, self.tree_dim, self.flatten_output
+            self.num_trees, self.depth, self.tree_dim
         )
 
 
 class GAM_ODST(ODST):
-    def __init__(self, input_dim, *args,
-                 depth=3,
-                 colsample_bytree=1.,
+    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6,
+                 choice_function=entmax15, bin_function=entmoid15,
+                 initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_,
-                 selectors_detach=False, fs_normalize=True,
-                 ga2m=0, **kwargs):
-        '''
-        Change an ODST tree that depends on only 1 or 2 features.
+                 colsample_bytree=1.,
+                 selectors_detach=False,
+                 fs_normalize=True,
+                 ga2m=0):
+        """A layer of GAM ODST trees.
 
-        selectors_detach: if True, the selector will be detached before passing into the next layer.
-            This will save GPU memory in the large dataset (e.g. Epsilon).
-        fs_normalize: if True, we normalize the feature selectors be summed to 1. But actually 
-            False or True do not make too much difference.
-        ga2m: if set to 1, use GA2M, else use GAM.
-        '''
+        Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
+        to make it as a GAM or GA2M.
+
+        Args:
+            input_dim: number of features in the input tensor.
+            num_trees: number of trees in this layer.
+            tree_dim: number of response channels in the response of individual tree.
+            depth: number of splits in every tree.
+            choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
+                f(tensor, dim).sum(dim) == 1.
+            bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
+            initialize_response_: in-place initializer for tree output tensor.
+            initialize_selection_logits_: in-place initializer for logits that select features for
+                the tree. Both thresholds and scales are initialized with data-aware init
+                (or .load_state_dict).
+            colsample_bytree: the random proportion of features allowed in each tree. The same
+                argument as in xgboost package. If less than 1, for each tree, it will only choose a
+                fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
+                will only selects among 90% of the features.
+            selectors_detach: if True, the selector will be detached before passing into the next layer.
+                This will save GPU memory in the large dataset (e.g. Epsilon).
+            fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
+                True do not make too much difference in performance.
+            ga2m: if set to 1, use GA2M, else use GAM.
+        """
         if ga2m:
-            # If the colsample_bytree too small or depth < 2 that there are not at least 2 features 
-            # modeled in the tree, just downgrade to GAM.
-            if depth < 2 \
-                    or (colsample_bytree < 1. and int(np.ceil(input_dim * colsample_bytree)) < 2):
-                print('Use GAM instead since colsample_by_tree is too small or depth=1 that GA2M is not allowed.')
-                ga2m = 0
+            # If specified as GA2M, but the tree depth is set to just 1 that can not model GA2M.
+            # Change it to 2.
+            if depth < 2:
+                depth = 2
+
+            # Similarly, if the colsample_by_tree is too small that each tree has only 1 feature,
+            # increases it to 2.
+            if (colsample_bytree < 1. and int(np.ceil(input_dim * colsample_bytree)) < 2):
+                colsample_bytree = 2 / input_dim
+
+        if colsample_bytree >= input_dim:
+            colsample_bytree = 1
 
         super().__init__(
-            input_dim,
-            *args,
+            input_dim=input_dim,
+            num_trees=num_trees,
             depth=depth,
-            colsample_bytree=colsample_bytree,
+            tree_dim=tree_dim,
+            choice_function=choice_function,
+            bin_function=bin_function,
+            initialize_response_=initialize_response_,
             initialize_selection_logits_=initialize_selection_logits_,
-            **kwargs)
+            colsample_bytree=colsample_bytree,
+        )
         self.selectors_detach = selectors_detach
         self.fs_normalize = fs_normalize
         self.ga2m = ga2m
 
-        # Remove the feature_selection logits defined in the ODST and instead re-initialize to only at most
-        # 1 or 2 depths,
+        # Remove the feature_selection logits defined in the ODST and instead re-initialize to only
+        # at most 1 or 2 depths.
         del self.feature_selection_logits
         the_depth = 1 if not self.ga2m else 2
         self.feature_selection_logits = nn.Parameter(
@@ -243,6 +301,17 @@ class GAM_ODST(ODST):
         self.feature_selectors = None
 
     def get_feature_selection_values(self, input, return_fss=False):
+        """Get the selected features of each tree.
+
+        Args:
+            input: input data of shape [batch_size, input_dim].
+            return_fss: if True, return the feature selectors.
+
+        Returns:
+            feature_values: the feature input to trees in a batch.
+                Shape: [batch_size, num_trees, tree_depth].
+            feature_selectors: (optional) the feature selectors.
+        """
         feature_selectors = self.get_feature_selectors()
         # ^--[input_dim, num_trees, depth=1]
 
@@ -286,6 +355,20 @@ class GAM_ODST(ODST):
         return fv
 
     def cal_prev_feat_weights(self, myfs, pfs):
+        """Calculate the feature weights of the previous trees outputs.
+
+        To make sure it's a GAM or GA2M, the weights should be 0 if the previous tree focus on
+        different (sets of) features than the current tree, and should be 1 if they are the same.
+
+        Args:
+            myfs: the current feature selector of this layer.
+            pfs: the previous feature selectors.
+
+        Returns:
+            fw: the feature weights for the previous trees' outputs. Values are between 0 and 1.
+                Shape: [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
+                depth=2 in GA2M.
+        """
         # Do a row-wise inner product between prev selectors and cur ones
         if not self.ga2m:
             fw = torch.einsum('icd,ipd->pcd', myfs, pfs)
@@ -313,120 +396,89 @@ class GAM_ODST(ODST):
 
 
 class GAMAttODST(GAM_ODST):
-    def __init__(self, *args,
-                 prev_input_dim=0,
-                 dim_att=-1,
+    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6,
+                 choice_function=entmax15, bin_function=entmoid15,
+                 initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_,
-                 **kwargs):
-        kwargs['fs_normalize'] = False # No need normalization
-        super().__init__(*args,
-                         initialize_selection_logits_=initialize_selection_logits_,
-                         **kwargs)
+                 colsample_bytree=1., selectors_detach=False, ga2m=0,
+                 prev_input_dim=0, dim_att=8):
+        """A layer of GAM ODST trees with attention mechanism.
+
+        Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
+        to make it as a GAM or GA2M. And also add an attention between layers.
+
+        Args:
+            input_dim: number of features in the input tensor.
+            num_trees: number of trees in this layer.
+            tree_dim: number of response channels in the response of individual tree.
+            depth: number of splits in every tree.
+            choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
+                f(tensor, dim).sum(dim) == 1.
+            bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
+            initialize_response_: in-place initializer for tree output tensor.
+            initialize_selection_logits_: in-place initializer for logits that select features for
+                the tree. Both thresholds and scales are initialized with data-aware init
+                (or .load_state_dict).
+            colsample_bytree: the random proportion of features allowed in each tree. The same
+                argument as in xgboost package. If less than 1, for each tree, it will only choose a
+                fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
+                will only selects among 90% of the features.
+            selectors_detach: if True, the selector will be detached before passing into the next layer.
+                This will save GPU memory in the large dataset (e.g. Epsilon).
+            fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
+                True do not make too much difference in performance.
+            ga2m: if set to 1, use GA2M, else use GAM.
+            prev_input_dim: the number of previous layers' outputs.
+            dim_att: the dimension of attention embedding to reduce memory consumption.
+        """
+        assert prev_input_dim > 0, 'Need to specify the previous input dim.'
+        super().__init__(
+            input_dim=input_dim,
+            num_trees=num_trees,
+            depth=depth,
+            tree_dim=tree_dim,
+            choice_function=choice_function,
+            bin_function=bin_function,
+            initialize_response_=initialize_response_,
+            initialize_selection_logits_=initialize_selection_logits_,
+            colsample_bytree=colsample_bytree,
+            selectors_detach=selectors_detach,
+            fs_normalize=False,
+            ga2m=ga2m,
+        )
 
         self.prev_input_dim = prev_input_dim
         self.dim_att = dim_att
-        if prev_input_dim > 0:
-            # Save parameter
-            self.att_key = nn.Parameter(
-                torch.zeros([prev_input_dim, dim_att]), requires_grad=True
-            )
-            self.att_query = nn.Parameter(
-                torch.zeros([dim_att, self.num_trees]), requires_grad=True
-            )
-            initialize_selection_logits_(self.att_key)
-            initialize_selection_logits_(self.att_query)
+
+        # Save parameter
+        self.att_key = nn.Parameter(
+            torch.zeros([prev_input_dim, dim_att]), requires_grad=True
+        )
+        self.att_query = nn.Parameter(
+            torch.zeros([dim_att, self.num_trees]), requires_grad=True
+        )
+        initialize_selection_logits_(self.att_key)
+        initialize_selection_logits_(self.att_query)
 
     def cal_prev_feat_weights(self, feature_selectors, pfs):
-        assert self.prev_input_dim > 0
+        """Calculate the feature weights of the previous trees outputs.
 
+        To make sure it's a GAM or GA2M, the weights should be 0 if the previous tree focus on
+        different (sets of) features than the current tree, and should be 1 if they are the same.
+
+        Args:
+            feature_selectors: the current feature selector of this layer.
+            pfs: the previous feature selectors.
+
+        Returns:
+            fw: the feature weights for the previous trees' outputs. Values are between 0 and 1.
+                Shape: [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
+                depth=2 in GA2M.
+        """
         fw = super().cal_prev_feat_weights(feature_selectors, pfs)
         # ^--[prev_in_feats, num_trees, depth=1,2]
 
         pfa = torch.einsum('pa,at->pt', self.att_key, self.att_query)
-        new_fw = entmax15(fw.add(1e-20).log().add(pfa.unsqueeze_(-1)), dim=0)
-        # new_fw = entmax15((MIN_LOGITS * (1. - fw) + fw * 0.).add(pfa.unsqueeze_(-1)), dim=0)
+        new_fw = entmax15(fw.add(1e-6).log().add(pfa.unsqueeze_(-1)), dim=0)
         fw = fw * new_fw
         return fw
-
-
-
-class GAMAtt2ODST(GAM_ODST):
-    '''
-    For compatability purpose: do not worry about it.
-    '''
-    def __init__(self, *args,
-                 prev_input_dim=0,
-                 dim_att=-1,
-                 initialize_selection_logits_=nn.init.uniform_,
-                 **kwargs):
-        kwargs['fs_normalize'] = False # No need normalization
-        super().__init__(*args,
-                         initialize_selection_logits_=initialize_selection_logits_,
-                         **kwargs)
-
-        self.prev_input_dim = prev_input_dim
-        self.dim_att = dim_att
-        if prev_input_dim > 0:
-            # Save parameter
-            the_depth = 1 if not self.ga2m else 2
-            self.att_key = nn.Parameter(
-                torch.zeros([prev_input_dim, dim_att, the_depth]), requires_grad=True
-            )
-            self.att_query = nn.Parameter(
-                torch.zeros([dim_att, self.num_trees, the_depth]), requires_grad=True
-            )
-            initialize_selection_logits_(self.att_key)
-            initialize_selection_logits_(self.att_query)
-
-    def cal_prev_feat_weights(self, feature_selectors, pfs):
-        assert self.prev_input_dim > 0
-
-        fw = super().cal_prev_feat_weights(feature_selectors, pfs)
-        # ^--[prev_in_feats, num_trees, depth=1,2]
-
-        pfa = torch.einsum('pad,atd->ptd', self.att_key, self.att_query)
-        new_fw = entmax15(fw.add(1e-20).log().add(pfa), dim=0)
-        # new_fw = entmax15((MIN_LOGITS * (1. - fw) + fw * 0.).add(pfa.unsqueeze_(-1)), dim=0)
-        fw = fw * new_fw
-        return fw
-
-
-class GAMAtt3ODST(GAM_ODST):
-    '''
-    Testing with another idea that attention depends on both input features 
-        and the outputs from previous layers. Does not have too much difference
-        to GAMAttODST. So no need to use it.
-    '''
-    def __init__(self, *args,
-                 prev_input_dim=0,
-                 dim_att=-1,
-                 initialize_selection_logits_=nn.init.uniform_,
-                 **kwargs):
-        super().__init__(*args,
-                         initialize_selection_logits_=initialize_selection_logits_,
-                         **kwargs)
-        self.prev_input_dim = prev_input_dim
-        self.dim_att = dim_att
-
-        if prev_input_dim > 0:
-            the_depth = 1 if not self.ga2m else 2
-            self.att_key = nn.Parameter(
-                torch.zeros([self.input_dim + prev_input_dim, dim_att, the_depth]),
-                requires_grad=True,
-            )
-            self.att_query = nn.Parameter(
-                torch.zeros([dim_att, self.num_trees, the_depth]), requires_grad=True
-            )
-            initialize_selection_logits_(self.att_key)
-            initialize_selection_logits_(self.att_query)
-
-    def post_process(self, feature_selectors):
-        fs = feature_selectors
-        if self.prev_input_dim > 0:
-            pfa = torch.einsum('pad,atd->ptd', self.att_key, self.att_query)
-            new_fs = entmax15(fs.add(1e-20).log().add(pfa), dim=0)
-            fs = new_fs * fs
-        return fs
-
-    def load_state_dict(self, state_dict, strict=True):
-        return super().load_state_dict(state_dict, strict)

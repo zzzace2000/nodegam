@@ -1,3 +1,5 @@
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
 import pandas as pd
 import numpy as np
 
@@ -17,15 +19,16 @@ class MyCommonBase(object):
 
 
 class MyExtractLogOddsMixin(MyCommonBase):
-    '''
-    It uses the predict function to extract the log odds from the underlying model.
-    It is useful to deal with black-box model that is hard to extract the marginal plot from it.
-    It can then use "get_GAM_df(self, x_values_lookup=None)" to extract
+    """Extract the output from the underlying model.
+
+    It uses the predict function to extract the log odds from the underlying model. It is useful
+    to deal with a black-box model that is hard to extract the marginal plot from it. It can then
+    use "get_GAM_df(self, x_values_lookup=None)" to extract.
 
     Requirement: the cls needs to implement one of:
-    1) predict(): this is for regression model
-    2) predict_proba(): this is for binary classification
-    '''
+    1) predict(): this is for regression model.
+    2) predict_proba(): this is for binary classification.
+    """
 
     def extract_log_odds(self, log_odds):
         split_lens = [len(log_odds[f_name]['x_val']) for f_name in self.feature_names]
@@ -124,10 +127,12 @@ class MyExtractLogOddsMixin(MyCommonBase):
 
 
 class MyFitMixin(object):
-    '''
-    It overides the fit() to record the self.feature_names and self.X_value_counts.
-    It would call the super().fit() if there exists such function or just silently returns
-    '''
+    """My Mixin to record the feature names and counts when called fit().
+
+    It overides the fit() to record the self.feature_names and self.X_value_counts. It would call
+    the super().fit() if there exists such function or just silently returns if not.
+    """
+
     def fit(self, X, y, **kwargs):
         assert isinstance(X, pd.DataFrame) or isinstance(X, np.ndarray)
 
@@ -135,12 +140,6 @@ class MyFitMixin(object):
             if isinstance(X, np.ndarray) else list(X.columns)
 
         self.X_values_counts = get_X_values_counts(X, self.feature_names)
-
-        # TODO: Make the fit function as another standalone Mixin class
-        # Now just use a hack. We could call this function independetly. Used in MySpline cls.
-        # if not hasattr(super(), 'fit'):
-        #     return
-
         return super().fit(X, y, **kwargs)
 
 

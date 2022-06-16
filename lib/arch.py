@@ -1,10 +1,15 @@
+"""The architecture of the models.
+
+This file includes the NODE (ODSTBlock), NODE-GAM (GAMBlock), and NODE-GAM with attention
+(GAMAttBlock).
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
 import numpy as np
 import pandas as pd
-import copy
 from tqdm import tqdm
 
 from .odst import ODST, GAM_ODST, GAMAttODST
@@ -13,38 +18,50 @@ from .utils import process_in_chunks, Timer
 
 
 class ODSTBlock(nn.Sequential):
-    '''
-    NODE model
-    '''
-    def __init__(self, input_dim, layer_dim, num_layers, num_classes=1, addi_tree_dim=0,
-                 max_features=None, output_dropout=0.0, flatten_output=True,
-                 last_as_output=False, init_bias=False, add_last_linear=False,
+    """Original NODE model adapted from https://github.com/Qwicen/node."""
+
+    def __init__(self, input_dim, num_trees, num_layers, num_classes=1,
+                 addi_tree_dim=0,
+                 output_dropout=0.0, init_bias=True, add_last_linear=True,
                  last_dropout=0., l2_lambda=0., **kwargs):
-        layers = self.create_layers(input_dim, layer_dim, num_layers,
+        """Neural Oblivious Decision Ensembles (NODE).
+
+        Args:
+            input_dim: the input dimension of dataset.
+            num_trees: how many ODST trees in a layer.
+            num_layers: how many layers of trees.
+            num_classes: how many classes to predict. It's the output dim.
+            addi_tree_dim: additional dimension for the outputs of each tree. If the value x > 0,
+                each tree outputs a (1 + x) dimension of vector.
+            output_dropout: the dropout rate on the output of each tree.
+            init_bias: if set to True, it adds a trainable bias to the output of the model.
+            add_last_linear: if set to True, add a last linear layer to sum outputs of all trees.
+            last_dropout: if add_last_layer is True, then it adds a dropout on the weight og last
+                linear year.
+            l2_lambda: add a l2 penalty on the outputs of trees.
+        """
+        layers = self.create_layers(input_dim, num_trees, num_layers,
                                     tree_dim=num_classes + addi_tree_dim,
-                                    max_features=max_features,
                                     **kwargs)
         super().__init__(*layers)
-        self.num_layers, self.layer_dim, self.num_classes, self.addi_tree_dim = \
-            num_layers, layer_dim, num_classes, addi_tree_dim
-        self.max_features, self.flatten_output = max_features, flatten_output
+        self.num_layers, self.num_trees, self.num_classes, self.addi_tree_dim = \
+            num_layers, num_trees, num_classes, addi_tree_dim
         self.output_dropout = output_dropout
-        self.last_as_output = last_as_output
         self.init_bias = init_bias
         self.add_last_linear = add_last_linear
         self.last_dropout = last_dropout
         self.l2_lambda = l2_lambda
 
-        if init_bias:
-            val = torch.tensor(0.) if num_classes == 1 \
-                else torch.full([num_classes], 0., dtype=torch.float32)
-            self.bias = nn.Parameter(val, requires_grad=False)
+        val = torch.tensor(0.) if num_classes == 1 \
+            else torch.full([num_classes], 0., dtype=torch.float32)
+        self.bias = nn.Parameter(val, requires_grad=init_bias)
 
         self.last_w = None
         if add_last_linear or addi_tree_dim < 0:
             # Happens when more outputs than intermediate tree dim
             self.last_w = nn.Parameter(torch.empty(
-                num_layers * layer_dim * (num_classes + addi_tree_dim), num_classes))
+                num_layers * num_trees * (num_classes + addi_tree_dim),
+                num_classes))
             nn.init.xavier_uniform_(self.last_w)
 
         # Record which params need gradient
@@ -53,36 +70,44 @@ class ODSTBlock(nn.Sequential):
             if param.requires_grad:
                 self.named_params_requires_grad.add(name)
 
-    def create_layers(self, input_dim, layer_dim, num_layers,
-                      tree_dim, max_features=None, **kwargs):
+    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+        """Create layers of oblivious trees.
+
+        Args:
+            input_dim: the dim of input features.
+            num_trees: the number of trees in a layer.
+            num_layers: the number of layers.
+            tree_dim: the output dimension of each tree.
+            kwargs: the kwargs for initializing odst trees.
+        """
         layers = []
         for i in range(num_layers):
-            # Last layer only has num_classes dim
-            oddt = ODST(input_dim, layer_dim, tree_dim=tree_dim, flatten_output=True,
-                        **kwargs)
-            input_dim = min(input_dim + layer_dim * tree_dim, max_features or float('inf'))
+            oddt = ODST(input_dim, num_trees, tree_dim=tree_dim, **kwargs)
+            input_dim = input_dim + num_trees * tree_dim
             layers.append(oddt)
         return layers
 
     def forward(self, x, return_outputs_penalty=False, feature_masks=None):
-        '''
-        feature_masks: Only used in the pretraining. If passed, the outputs of trees
-        belonging to masked features (masks==1) is zeroed.
-        This is like dropping out features directly.
-        '''
+        """Model prediction.
+
+        Args:
+            x: the input features.
+            return_outputs_penalty: if True, it returns the output l2 penalty.
+            feature_masks: only used in the pretraining. If passed, the outputs of trees belonging
+                to masked features (masks==1) is zeroed. This is like dropping out features directly.
+        """
         outputs = self.run_with_layers(x)
 
-        if not self.flatten_output:
-            num_output_trees = self.layer_dim if self.last_as_output \
-                else self.num_layers * self.layer_dim
-            outputs = outputs.view(*outputs.shape[:-1], num_output_trees,
-                                   self.num_classes + self.addi_tree_dim)
+        num_output_trees = self.num_layers * self.num_trees
+        outputs = outputs.view(*outputs.shape[:-1], num_output_trees,
+                               self.num_classes + self.addi_tree_dim)
 
         # During pretraining, we mask the outputs of trees
         if feature_masks is not None:
             assert not self[0].ga2m, 'Not supported for ga2m for now!'
             with torch.no_grad():
-                tmp = torch.cat([l.get_feature_selectors() for l in self], dim=1)
+                tmp = torch.cat([l.get_feature_selectors() for l in self],
+                                dim=1)
                 # ^-- [input_dim, layers * num_trees, 1]
                 op_masks = torch.einsum('bi,ied->bed', feature_masks, tmp)
             outputs = outputs * (1. - op_masks)
@@ -102,16 +127,16 @@ class ODSTBlock(nn.Sequential):
             # ^--[batch_size, num_trees, num_classes]
             result = outputs.mean(dim=-2).squeeze_(-1)
 
-        if self.init_bias:
-            result += self.bias.data
+        result += self.bias
 
         if return_outputs_penalty:
             # Average over batch, num_outputs_units
-            output_penalty = self.get_penalty(outputs)
+            output_penalty = self.calculate_l2_penalty(outputs)
             return result, output_penalty
         return result
 
-    def get_penalty(self, outputs):
+    def calculate_l2_penalty(self, outputs):
+        """Calculate l2 penalty."""
         return self.l2_lambda * (outputs ** 2).mean()
 
     def run_with_layers(self, x):
@@ -119,21 +144,19 @@ class ODSTBlock(nn.Sequential):
 
         for layer in self:
             layer_inp = x
-            if self.max_features is not None:
-                tail_features = min(self.max_features, layer_inp.shape[-1]) - initial_features
-                if tail_features != 0:
-                    layer_inp = torch.cat([layer_inp[..., :initial_features], layer_inp[..., -tail_features:]], dim=-1)
             h = layer(layer_inp)
             if self.training and self.output_dropout:
                 h = F.dropout(h, self.output_dropout)
             x = torch.cat([x, h], dim=-1)
 
-        outputs = h if self.last_as_output else x[..., initial_features:]
+        outputs = x[..., initial_features:]
         return outputs
 
     def set_bias(self, y_train):
-        ''' Set the bias term for GAM output as logodds of y. '''
-        assert self.init_bias
+        """Set the bias term for GAM output as logodds of y.
+
+        It's unnecessary to run since we can just use a learnable bias.
+        """
 
         y_cls, counts = np.unique(y_train, return_counts=True)
         bias = np.log(counts / np.sum(counts))
@@ -153,32 +176,40 @@ class ODSTBlock(nn.Sequential):
                 param.requires_grad = True
 
     def get_num_trees_assigned_to_each_feature(self):
-        '''
-        Return num of trees assigned to each feature in GAM.
-        Return a vector of size equal to the input_dim
-        '''
+        """Get the number of trees assigned to each feature per layer.
+
+        It's helpful for logging. Just to see how many trees focus on some features.
+
+        Returns:
+            counts: shape of [num_layers, num_input_features (input_dim)].
+        """
         if type(self) is ODSTBlock:
             return None
 
         num_trees = [l.get_num_trees_assigned_to_each_feature() for l in self]
-        return torch.stack(num_trees)
+        counts = torch.stack(num_trees)
+        return counts
 
     @classmethod
     def load_model_by_hparams(cls, args, ret_step_callback=False):
+        """Helper function to generate a model instance based on hyperparameters.
+
+        Args:
+            args: the arguments from argparse. It specifies all hyperparameters.
+        """
         if isinstance(args, dict):
             args = argparse.Namespace(**args)
         assert args.arch == 'ODST', 'Wrong arch: ' + args.arch
 
         model = ODSTBlock(
             input_dim=args.input_dim,
-            layer_dim=args.num_trees,
+            num_trees=args.num_trees,
             num_layers=args.num_layers,
             num_classes=args.num_classes,
             addi_tree_dim=args.addi_tree_dim + getattr(args, 'data_addi_tree_dim', 0),
-            depth=args.depth, flatten_output=False,
+            depth=args.depth,
             choice_function=nn_utils.entmax15,
-            init_bias=(getattr(args, 'init_bias', False)
-                       and args.problem == 'classification'),
+            init_bias=True,
             output_dropout=args.output_dropout,
             last_dropout=args.last_dropout,
             colsample_bytree=args.colsample_bytree,
@@ -194,112 +225,121 @@ class ODSTBlock(nn.Sequential):
 
     @classmethod
     def add_model_specific_args(cls, parser):
-        parser.add_argument("--colsample_bytree", type=float, default=1.)
-        parser.add_argument("--output_dropout", type=float, default=0.)
-        parser.add_argument("--add_last_linear", type=int, default=1)
-        parser.add_argument("--last_dropout", type=float, default=0.)
+        """Add argparse arguments."""
+        parser.add_argument("--colsample_bytree", type=float, default=1.,
+                            help="The random proportion of features allowed in each tree. The same "
+                                 "argument as in xgboost package. If less than 1, for each tree, "
+                                 "it will only choose a fraction of features to train.")
+        parser.add_argument("--output_dropout", type=float, default=0.,
+                            help='The dropout rate on the output of each tree.')
+        parser.add_argument("--last_dropout", type=float, default=0.5,
+                            help="The dropout rate on the last linear layer.")
+        parser.add_argument("--add_last_linear", type=int, default=1,
+                            help="If 1, add the last linear layer to aggregate the output of trees. "
+                                 "If 0, do an average of all outputs of trees.")
 
         for action in parser._actions:
             if action.dest == 'lr':
+                # Change the default LR to be 1e-3
                 action.default = 1e-3
-            # if action.dest == 'batch_size':
-            #     action.default = 1024
         return parser
 
     @classmethod
     def get_model_specific_rs_hparams(cls):
+        """Specify the range of hyperparameter search."""
         ch = np.random.choice
 
         rs_hparams = {
-            'seed': dict(short_name='s', gen=lambda args: int(np.random.randint(100))),
-            'num_layers': dict(short_name='nl',
-                               gen=lambda args: int(ch([2, 3, 4, 5]))),
+            'seed': dict(short_name='s',
+                         gen=lambda args: int(np.random.randint(100))),
+            'num_layers': dict(short_name='nl', gen=lambda args: int(ch([2, 3, 4, 5]))),
             'num_trees': dict(short_name='nt',
-                              # gen=lambda args: int(ch([4096, 8192, 16384, 32768, 32768*2]))),
                               gen=lambda args: int(ch([500, 1000, 2000, 4000])) // args.num_layers),
-            'addi_tree_dim': dict(short_name='td',
-                                  gen=lambda args: int(ch([0, 1, 2]))),
-            # gen=lambda args: 0),
+            'addi_tree_dim': dict(short_name='td', gen=lambda args: int(ch([0]))),
             'depth': dict(short_name='d', gen=lambda args: int(ch([2, 4, 6]))),
-            'output_dropout': dict(short_name='od',
-                                   gen=lambda args: ch([0., 0.1, 0.2])),
+            'output_dropout': dict(short_name='od', gen=lambda args: ch([0., 0.1, 0.2])),
             'colsample_bytree': dict(short_name='cs', gen=lambda args: ch([1., 0.5, 0.1])),
             'lr': dict(short_name='lr', gen=lambda args: ch([0.01, 0.005])),
-            'l2_lambda': dict(short_name='la',
-                              gen=lambda args: float(ch([1e-5, 1e-6, 0.]))),
+            'l2_lambda': dict(short_name='la', gen=lambda args: float(ch([1e-5, 1e-6, 0.]))),
             'add_last_linear': dict(
                 short_name='ll',
                 gen=lambda args: (int(ch([0, 1]))),
             ),
             'last_dropout': dict(short_name='ld',
-                                 gen=lambda args: (0. if not args.add_last_linear
-                                                   else ch([0., 0.1, 0.2, 0.3]))),
+                                 gen=lambda args: (
+                                     0. if not args.add_last_linear
+                                     else ch([0., 0.1, 0.2, 0.3]))),
         }
         return rs_hparams
 
     @classmethod
     def add_model_specific_results(cls, results, args):
+        """Add or modify the output of csv recording."""
         results['depth'] = args.depth
         return results
 
 
 class GAMAdditiveMixin(object):
-    '''
-    All Functions related to extracting GAM and GA2M graphs from the model.
-    '''
-    def extract_additive_terms(self, X, norm_fn=lambda x: x, y_mu=0., y_std=1.,
-                               device='cpu', batch_size=1024, tol=1e-3,
-                               purify=True):
-        '''
-        Extract the additive terms (supports the main and interaction effects).
+    """All Functions related to extracting GAM and GA2M graphs from the model."""
 
-        X: input 2d array (pandas). Note that it is the unpreprocessed data.
-        norm_fn: the data preprocessing function (E.g. quantile normalization) 
-            before the model. Inputs: pandas X. Outputs: preprocessed outputs.
-        y_mu, y_std: the outputs of the model will be multiplied by y_std and then shifted by y_mu. 
-            It's useful in regression problem where target y is normalized to mean 0 and std 1.
-            Default: 0, 1.
-        device: use which device to run the model. Default: 'cpu'
-        batch_size: batch size 
-        tol: the tolerance error for the interaction purification that moves mass from interactions to mains
-            (see the last paragraph of Sec. 3 in Page 5).
-        purify: if True, we move all effects of the interactions as much as possible to main effects.
+    def extract_additive_terms(self, X, norm_fn=lambda x: x, y_mu=0., y_std=1., device='cpu',
+                               batch_size=1024, tol=1e-3, purify=True):
+        """Extract the additive terms in the GAM/GA2M model to plot the graphs.
 
-        :return
-            df: a pandas table that shows all main and interaction effects.
-        '''
+        To extract the main and interaction terms, it runs the model on all possible input values
+        and get the predicted value of each additive term. Then it returns a mapping of x and
+        model's outputs y in a dataframe for each term.
+
+        Args:
+            X: input 2d array (pandas). Note that it is the unpreprocessed data.
+            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+                into the model. Inputs: pandas X. Outputs: preprocessed outputs.
+            y_mu, y_std: the outputs of the model will be multiplied by y_std and then shifted by
+                y_mu. It's useful in regression problem where target y is normalized to mean 0 and
+                std 1. Default: 0, 1.
+            device: use which device to run the model. Default: 'cpu'.
+            batch_size: batch size.
+            tol: the tolerance error for the interaction purification that moves mass from
+                interactions to mains (see the "purification" of the paper).
+            purify: if True, we move all effects of the interactions to main effects.
+
+        Returns:
+            df: a pandas table that records all main and interaction terms. The columns are:
+                feat_name: the feature name. E.g. "Hour".
+                feat_idx: the feature index. E.g. 2.
+                x: the unique values of the feature. E.g. [0.5, 3, 4.7].
+                y: the values of the output. E.g. [-0.2, 0.3, 0.5].
+                importance: the feature importance. It's calculated as the weighted average of
+                    the absolute value of y weighted by the counts of each unique value.
+                counts: the counts of each unique value in the data. E.g. [20, 10, 3].
+        """
         assert self.num_classes == 1, 'Has not support > 2 classes. But should be easy.'
         assert isinstance(X, pd.DataFrame)
         self.eval()
 
-        # with Timer('Run and extract values', remove_start_msg=False):
         vals, counts, terms = self._run_and_extract_vals_counts(
             X, device, batch_size, norm_fn=norm_fn, y_mu=y_mu, y_std=y_std)
 
         if purify:
             # Doing centering: do the pairwise purification
             with Timer('Purify interactions to main effects'):
-                self._purify_interactions(
-                    X, terms, vals, counts,
-                    tol=tol,
-                )
+                self._purify_interactions(vals, counts, tol=tol)
 
         # Center the main effect
         with Timer('Center main effects'):
-            vals[-1] += (0. if not self.init_bias else self.bias.data.item())
-            for idx, t in enumerate(terms):
-                if isinstance(t, tuple):  # main term
+            vals[-1] += (self.bias.data.item())
+            for t in vals:
+                # If it's an interaction term or the bias term, continue.
+                if isinstance(t, tuple) or t == -1:
                     continue
 
-                # weights = np.array(list(counts[t].values()))
-                # avg = np.average(np.array(list(vals[t].values())), weights=weights)
                 weights = counts[t].values
                 avg = np.average(vals[t].values, weights=weights)
 
                 vals[-1] += avg
                 vals[t] -= avg
 
-        # Organize data frame
+        # Organize data frame. Initialize with the bias term.
         results = [{
             'feat_name': 'offset',
             'feat_idx': -1,
@@ -344,26 +384,31 @@ class GAMAdditiveMixin(object):
 
             df = pd.DataFrame(results)
             df['tmp'] = df.feat_idx.apply(
-                lambda x: x[0] * 1e10 + x[1] * 1e5 if isinstance(x, tuple) else int(x))
+                lambda x: x[0] * 1e10 + x[1] * 1e5 if isinstance(x,
+                                                                 tuple) else int(
+                    x))
             df = df.sort_values('tmp').drop('tmp', axis=1)
             df = df.reset_index(drop=True)
         return df
 
     def run_with_additive_terms(self, x):
-        '''
-        Run the models. But instead of summing all the tree outputs, we sum the outputs 
-        for each main or interaction term.
+        """Run the models but return the outputs of each main and interaction term.
 
-        x: inputs to the model. A Pytorch Tensor of [batch_size, input_dim].
+        Run the models. But instead of summing all the tree outputs, we return the aggregate outputs
+        under each main or interaction term for each example.
+
+        Args:
+            x: inputs to the model. A Pytorch Tensor of [batch_size, input_dim].
     
-        :return
-            result: a tensor with shape [batch_size, num_unique_terms, output_dim].
-                'num_unique_terms' is the total number of main and interaction effects.
-                'output_dim': the output_dim (num_classes). Usually 1.
-        '''
+        Returns:
+            result: a tensor with shape [batch_size, num_unique_terms, output_dim] where
+                'num_unique_terms' is the total number of main and interaction effects, and
+                'output_dim' is the output_dim (num_classes). Usually 1.
+        """
         outputs = self.run_with_layers(x)
         td = self.num_classes + self.addi_tree_dim
-        outputs = outputs.view(*outputs.shape[:-1], self.num_layers * self.layer_dim, td)
+        outputs = outputs.view(*outputs.shape[:-1],
+                               self.num_layers * self.num_trees, td)
         # ^--[batch_size, layers*num_trees, tree_dim]
 
         terms, inv = self.get_additive_terms(return_inverse=True)
@@ -373,11 +418,13 @@ class GAMAdditiveMixin(object):
             inv = inv.unsqueeze_(-1).expand(-1, td).reshape(-1)
             # ^-- [layers*num_trees*tree_dim] binary features
 
-            new_w = inv.new_zeros(inv.shape[0], len(terms), self.num_classes, dtype=torch.float32)
+            new_w = inv.new_zeros(inv.shape[0], len(terms), self.num_classes,
+                                  dtype=torch.float32)
             # ^-- [layers*num_trees*tree_dim, uniq_terms, num_classes]
             val = self.last_w.unsqueeze(1).expand(-1, len(terms), -1)
             # ^-- [layers*num_trees*tree_dim, uniq_terms, num_classes]
-            idx = inv.unsqueeze_(-1).unsqueeze_(-1).expand(-1, 1, self.num_classes)
+            idx = inv.unsqueeze_(-1).unsqueeze_(-1).expand(-1, 1,
+                                                           self.num_classes)
             # ^-- [layers*num_trees*tree_dim, num_classes]
             new_w.scatter_(1, idx, val)
 
@@ -389,18 +436,44 @@ class GAMAdditiveMixin(object):
             # ^--[batch_size, layers*num_trees, num_classes]
 
             new_w = inv.new_zeros(inv.shape[0], len(terms), dtype=torch.float32)
-            # idx = inv.unsqueeze_(-1)
             new_w.scatter_(1, inv.unsqueeze_(-1), 1. / inv.shape[0])
             # ^-- [layers*num_trees*tree_dim, uniq_terms]
 
             result = torch.einsum('bdc,du->buc', outputs, new_w)
         return result
 
-    def _run_and_extract_vals_counts(self, X, device, batch_size,
-                                     norm_fn=lambda x: x, y_mu=0., y_std=1.):
+    def _run_and_extract_vals_counts(self, X, device, batch_size, norm_fn=lambda x: x, y_mu=0.,
+                                     y_std=1.):
+        """Run the models and return the value of model's outputs and the counts.
+
+        It runs the model on all inputs X, and returns the models's output and the counts of each
+        input value for each term.
+
+        Args:
+            X: input 2d array (pandas). Note that it is the unnormalized data.
+            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+                into the model. Inputs: pandas X. Outputs: preprocessed outputs.
+            y_mu, y_std: the outputs of the model will be multiplied by y_std and then shifted by
+                y_mu. It's useful in regression problem where target y is normalized to mean 0 and
+                std 1. Default: 0, 1.
+            device: use which device to run the model. Default: 'cpu'.
+            batch_size: batch size.
+            tol: the tolerance error for the interaction purification that moves mass from
+                interactions to mains (see the "purification" of the paper).
+            purify: if True, we move all effects of the interactions to main effects.
+
+        Returns:
+            E.g. if a model learns 2 main terms [1, 2] and an interaction term (2, 3), it returns:
+            vals: a dict that maps the term to the map of X (value) and y (outputs).
+                E.g. {1: {0: -0.2, ..., 23: 0.4}, 2: {...}, (2, 3): {...}}.
+            counts: a dict that maps the term to the map of X (value) and the counts in dataset.
+                E.g. {1: {0: 2, ..., 23: 10}, 2: {...}, (2, 3): {...}}.
+            terms: all the main and interaction terms. E.g. [1, 2, (2, 3)].
+        """
+
         with Timer('Run values through model'), torch.no_grad():
             results = self._run_vals_with_additive_term_with_batch(
-                X, device, batch_size, norm_fn=norm_fn, y_mu=y_mu, y_std=y_std)
+                X, device, batch_size, norm_fn=norm_fn, y_std=y_std)
 
         # Extract all additive term results
         with Timer('Extract values'):
@@ -408,22 +481,57 @@ class GAMAdditiveMixin(object):
             vals[-1] = y_mu
         return vals, counts, terms
 
-    def _run_vals_with_additive_term_with_batch(self, X, device, batch_size,
-                                                norm_fn=lambda x: x, y_mu=0., y_std=1.):
+    def _run_vals_with_additive_term_with_batch(self, X, device, batch_size, norm_fn=lambda x: x,
+                                                y_std=1.):
+        """Run the models with additive terms using mini-batch.
+
+        It calls self.run_with_additive_terms() with mini-batch.
+
+        Args:
+            X: input 2d array (pandas). Note that it is the unnormalized data.
+            device: use which device to run the model. Default: 'cpu'.
+            batch_size: batch size.
+            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+                into the model. Inputs: pandas X. Outputs: preprocessed outputs.
+            y_std: the outputs of the model will be multiplied by y_std. It's useful in regression
+                problem where target y is normalized to std 1. Default: 1.
+
+        Returns:
+            results: the model's output of each term. A numpy tensor of shape
+            [num_data, num_unique_terms, output_dim] where:
+                'num_unique_terms' is the total number of main and interaction effects, and
+                'output_dim' is the output_dim (num_classes). Usually 1.
+        """
+
         results = process_in_chunks(
-            lambda x: self.run_with_additive_terms(
-                torch.tensor(norm_fn(x), device=device)),
+            lambda x: self.run_with_additive_terms(torch.tensor(norm_fn(x), device=device)),
             X.values, batch_size=batch_size)
         results = results.cpu().numpy()
         results = (results * y_std)
         return results
 
     def _extract_vals_counts(self, results, X):
+        """Extracts the values and counts based on the outputs of models with additive terms.
+
+        Args:
+            results: the model's outputs of self._run_vals_with_additive_term_with_batch. It's a
+                numpy tensor of shape [num_data, num_unique_terms, output_dim] that represents the
+                model's output of each data on each additive term.
+            X: the inputs of the data.
+
+        Returns:
+            E.g. if a model learns 2 main terms [1, 2] and an interaction term (2, 3), it returns:
+            vals: a dict that maps the term to the map of X (value) and y (outputs).
+                E.g. {1: {0: -0.2, ..., 23: 0.4}, 2: {...}, (2, 3): {...}}.
+            counts: a dict that maps the term to the map of X (value) and the counts in dataset.
+                E.g. {1: {0: 2, ..., 23: 10}, 2: {...}, (2, 3): {...}}.
+            terms: all the main and interaction terms. E.g. [1, 2, (2, 3)].
+        """
         terms = self.get_additive_terms()
 
         vals, counts = {}, {}
         for idx, t in enumerate(tqdm(terms)):
-            if not isinstance(t, tuple):
+            if not isinstance(t, tuple): # main effect term
                 index = X.iloc[:, t]
                 scores = pd.Series(results[:, idx, 0], index=index)
 
@@ -443,7 +551,8 @@ class GAMAdditiveMixin(object):
                 vals[t] = the_vals.unstack(level=-1).fillna(0.)
                 counts[t] = the_counts.unstack(level=-1).fillna(0).astype(int)
 
-        # In case only interaction effect is chosen but not main effect
+        # For each interaction tuple (i, j), initialize the main effect term i and j since they
+        # will have some values during the purification.
         for t in terms:
             if not isinstance(t, tuple):
                 continue
@@ -459,48 +568,54 @@ class GAMAdditiveMixin(object):
 
         return vals, counts, terms
 
-    def _purify_interactions(self, X, terms, vals, counts, tol=1e-3):
-        for idx, t in enumerate(terms):
-            if not isinstance(t, tuple):  # only interactions
+    def _purify_interactions(self, vals, counts, tol=1e-3):
+        """Purify the interaction term to move the mass from interaction to the main effect.
+
+        See the Supp. D in the paper for details. It modifies the vals in-place for the main terms.
+
+        Args:
+            vals: for each additive term, it maps between the unique value of x and the output of
+                model. E.g. {1: {1: -0.1, 2.5: 0.3, ...}}.
+            counts: for each additive term, it maps between the unique value of x and the counts in
+                the data. E.g. {1: {1: 2, 2.5: 5, ...}}.
+        """
+        for t in vals:
+            # If it's not an interaction term, continue.
+            if not isinstance(t, tuple):
                 continue
 
-            if True:
-                biggest_epsilon = np.inf
-                while biggest_epsilon > tol:
-                    biggest_epsilon = -np.inf
+            # Continue purify the interactions until the purified average value is smaller than tol.
+            biggest_epsilon = np.inf
+            while biggest_epsilon > tol:
+                biggest_epsilon = -np.inf
 
-                    avg = (vals[t] * counts[t]).sum(axis=1).values / counts[t].sum(axis=1).values
-                    if np.max(np.abs(avg)) > biggest_epsilon:
-                        biggest_epsilon = np.max(np.abs(avg))
+                avg = (vals[t] * counts[t]).sum(axis=1).values / counts[t].sum(axis=1).values
+                if np.max(np.abs(avg)) > biggest_epsilon:
+                    biggest_epsilon = np.max(np.abs(avg))
 
-                    vals[t] -= avg.reshape(-1, 1)
-                    vals[t[0]] += avg
+                vals[t] -= avg.reshape(-1, 1)
+                vals[t[0]] += avg
 
-                    avg = (vals[t] * counts[t]).sum(axis=0).values / counts[t].sum(axis=0).values
-                    if np.max(np.abs(avg)) > biggest_epsilon:
-                        biggest_epsilon = np.max(np.abs(avg))
+                avg = (vals[t] * counts[t]).sum(axis=0).values / counts[
+                    t].sum(axis=0).values
+                if np.max(np.abs(avg)) > biggest_epsilon:
+                    biggest_epsilon = np.max(np.abs(avg))
 
-                    vals[t] -= avg.reshape(1, -1)
-                    vals[t[1]] += avg
-
-    def quantile_digitize(self, col_data, max_n_bins=None):
-        uniq_vals, uniq_idx = np.unique(col_data, return_inverse=True)
-        if max_n_bins is None or len(uniq_vals) <= max_n_bins:
-            return uniq_idx
-
-        bins = np.unique(
-            np.quantile(
-                uniq_vals, q=np.linspace(0, 1, max_n_bins + 1),
-            )
-        )
-
-        _, bin_edges = np.histogram(col_data, bins=bins)
-        digitized = np.digitize(col_data, bin_edges, right=False)
-        digitized[digitized == 0] = 1
-        digitized -= 1
-        return digitized
+                vals[t] -= avg.reshape(1, -1)
+                vals[t[1]] += avg
 
     def get_additive_terms(self, return_inverse=False):
+        """Get the additive terms in the GAM/GA2M model.
+
+        It returns all the main and interaction effects in the NodeGAM.
+        Args:
+            return_inverse: if True, it returns the map back from each additive term to the index
+            of trees. It's useful to check which tree focuses on which feature set.
+
+        Returns:
+            tuple_terms: a list of integer or tuple that represents all the additive terms it
+            learns. E.g. [2, 4, (2, 3), (1, 4)].
+        """
         fs = torch.cat([l.get_feature_selectors() for l in self], dim=1).sum(dim=-1)
         fs[fs > 0.] = 1.
         # ^-- [input_dim, layers*num_trees] binary features
@@ -509,25 +624,35 @@ class GAMAdditiveMixin(object):
         # ^-- ([input_dim, uniq_terms], [layers*num_trees])
 
         terms = result
-        if isinstance(result, tuple): # return inverse=True
+        if isinstance(result, tuple):  # return inverse=True
             terms = result[0]
 
-        # Make additive terms human-readable: make it as integer or tuple
-        tuple_terms = self.get_tuple_terms(terms)
+        # To make additive terms human-readable, it transforms the one-hot vector into an integer,
+        # and a 2-hot vector (interaction) into a tuple of integer.
+        tuple_terms = self.convert_onehot_vector_to_integers(terms)
 
         if isinstance(result, tuple):
             return tuple_terms, result[1]
         return tuple_terms
 
-    def get_tuple_terms(self, terms):
+    def convert_onehot_vector_to_integers(self, terms):
+        """Make onehot or multi-hot vectors into a list of integers or tuple.
+
+        Args:
+            terms: a pytorch tensor of [input_dim, uniq_terms].
+
+        Returns:
+            tuple_terms: a list of integers or tuples with the size of uniq_terms.
+        """
         r_idx, c_idx = torch.nonzero(terms, as_tuple=True)
         tuple_terms = []
         for c in range(terms.shape[1]):
             n_interaction = (c_idx == c).sum()
 
             if n_interaction > 2:
-                print(f'WARNING: it is not a GA2M with a {n_interaction}-way term. '
-                      f'Ignore this term.')
+                print(
+                    f'WARNING: it is not a GA2M with a {n_interaction}-way term. '
+                    f'Ignore this term.')
                 continue
             if n_interaction == 1:
                 tuple_terms.append(int(r_idx[c_idx == c].item()))
@@ -537,29 +662,53 @@ class GAMAdditiveMixin(object):
 
 
 class GAMBlock(GAMAdditiveMixin, ODSTBlock):
-    '''
-    Node-GAM model
-    '''
+    """Node-GAM model."""
+
     def __init__(self, *args, l2_interactions=0., l1_interactions=0., **kwargs):
+        """Initialization of Node-GAM.
+
+        Args:
+            *args: other arguments inherited from ODSTBlock.
+            l2_interactions: penalize the l2 magnitude of the output of trees that have
+                pairwise interactions. Default: 0.
+            l1_interactions: penalize the l1 magnitude of the output of trees that have
+                pairwise interactions. Default: 0.
+        """
         super().__init__(*args, **kwargs)
         self.l2_interactions = l2_interactions
         self.l1_interactions = l1_interactions
 
         self.inv_is_interaction = None
 
-    def create_layers(self, input_dim, layer_dim, num_layers,
-                      tree_dim, max_features=None, **kwargs):
+    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+        """Create layers.
+
+        Args:
+            input_dim: the input dimension (feature).
+            num_trees: number of trees in a layer.
+            num_layers: number of layers.
+            tree_dim: the dimension of the tree's output. Usually equal to num of classes.
+            *kwargs: the arguments for underlying GAM ODST trees.
+        """
         layers = []
         for i in range(num_layers):
             # Last layer only has num_classes dim
-            oddt = GAM_ODST(input_dim, layer_dim, tree_dim=tree_dim,
-                            flatten_output=True, **kwargs)
+            oddt = GAM_ODST(input_dim, num_trees, tree_dim=tree_dim, **kwargs)
             layers.append(oddt)
         return layers
 
-    def get_penalty(self, outputs):
+    def calculate_l2_penalty(self, outputs):
+        """Calculate the penalty of the trees' outputs.
+
+        It helps regularize the model.
+
+        Args:
+            outputs: the outputs of trees. A tensor of shape [batch_size, num_trees, tree_dim].
+        """
         # Normal L2 weight decay on outputs
-        penalty = super().get_penalty(outputs)
+        penalty = super().calculate_l2_penalty(outputs)
+
+        # If trees are still learning which features to take, skip the interaction penalty
         if not self[0].choice_function.is_deterministic:
             return penalty
 
@@ -578,13 +727,26 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
 
         outputs_interactions = outputs[:, self.inv_is_interaction, :]
         if self.l2_interactions > 0.:
-            penalty += self.l2_interactions * torch.mean(outputs_interactions ** 2)
+            penalty += self.l2_interactions * torch.mean(
+                outputs_interactions ** 2)
         if self.l1_interactions > 0.:
-            penalty += self.l1_interactions * torch.mean(torch.abs(outputs_interactions))
+            penalty += self.l1_interactions * torch.mean(
+                torch.abs(outputs_interactions))
 
         return penalty
 
     def run_with_layers(self, x, return_fs=False):
+        """Run the examples through the layers of trees.
+
+        Args:
+            x: the input tensor of shape [batch_size, input_dim].
+            return_fs: if True, it returns the feature selectors of each tree.
+
+        Returns:
+            outputs: the trees' outputs [batch_size, num_trees, tree_dim].
+            prev_feature_selectors: (Optional) if return_fs is True, this returns the feature
+                selector of each ODST tree of shape [input_dim, num_trees, tree_depth].
+        """
         initial_features = x.shape[-1]
         prev_feature_selectors = None
         for layer in self:
@@ -600,63 +762,59 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
                 if prev_feature_selectors is None \
                 else torch.cat([prev_feature_selectors, feature_selectors], dim=1)
 
-        outputs = h if self.last_as_output else x[..., initial_features:]
+        outputs = x[..., initial_features:]
         if return_fs:
             return outputs, prev_feature_selectors
         return outputs
 
     @classmethod
     def load_model_by_hparams(cls, args, ret_step_callback=False):
+        """Load the initialized model by its hyperparameters.
+
+        Args:
+            args: the arguments of the model. Can passed in a dictionary or a namespace.
+
+        """
         if isinstance(args, dict):
             args = argparse.Namespace(**args)
-        assert args.arch in ['GAM', 'GAMAtt', 'GAMAtt2', 'GAMAtt3'], 'Wrong arch: ' + args.arch
+
+        assert args.arch in ['GAM', 'GAMAtt'], 'Wrong arch: ' + args.arch
+
+        # If it's not GA2M, make sure the l2/l1 interaction is set to 0.
         if not getattr(args, 'ga2m', 0):
             assert getattr(args, 'l2_interactions', 0.) == 0., \
                 'No L2 penalty should be set for interaction'
             assert getattr(args, 'l1_interactions', 0.) == 0., \
                 'No L1 penalty should be set for interaction'
 
+        # Initialize choice function (default entmax)
         choice_fn = getattr(nn_utils, args.choice_fn)(
             max_temp=1., min_temp=args.min_temp, steps=args.anneal_steps)
 
         # Temperature annealing for entmoid
         bin_function = nn_utils.entmoid15
-        args.entmoid_min_temp = getattr(args, 'entmoid_min_temp', 1.)
-        if args.entmoid_min_temp < 1.:
-            bin_function = nn_utils.EMoid15Temp(
-                min_temp=args.entmoid_min_temp, steps=args.entmoid_anneal_steps)
-
-        # Backward compatibility
-        if 'in_features' in vars(args):
-            args.input_dim = args.in_features
-
         kwargs = dict(
             input_dim=args.input_dim,
-            layer_dim=args.num_trees,
+            num_trees=args.num_trees,
             num_layers=args.num_layers,
             num_classes=args.num_classes,
             addi_tree_dim=args.addi_tree_dim + getattr(args, 'data_addi_tree_dim', 0),
             depth=args.depth,
-            flatten_output=False,
             choice_function=choice_fn,
             bin_function=bin_function,
             output_dropout=args.output_dropout,
             last_dropout=getattr(args, 'last_dropout', 0.),
             colsample_bytree=args.colsample_bytree,
             selectors_detach=args.selectors_detach,
-            fs_normalize=args.fs_normalize,
-            last_as_output=args.last_as_output,
-            init_bias=(getattr(args, 'init_bias', False)
-                       and args.problem == 'classification'),
+            init_bias=True,
             add_last_linear=getattr(args, 'add_last_linear', False),
             save_memory=getattr(args, 'save_memory', 0),
             ga2m=getattr(args, 'ga2m', 0),
             l2_lambda=args.l2_lambda,
             l2_interactions=getattr(args, 'l2_interactions', 0.),
-            l1_interactions=getattr(args, 'l1_interactions', 0.),
         )
 
-        if args.arch in ['GAMAtt', 'GAMAtt2', 'GAMAtt3'] and 'dim_att' in args:
+        if args.arch in ['GAMAtt'] and 'dim_att' in args:
             kwargs['dim_att'] = args.dim_att
 
         model = cls(**kwargs)
@@ -664,37 +822,31 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
             return model
 
         step_callbacks = [choice_fn.temp_step_callback]
-        if args.entmoid_min_temp < 1.:
-            step_callbacks.append(bin_function.temp_step_callback)
         return model, step_callbacks
 
     @classmethod
     def add_model_specific_args(cls, parser):
-        parser.add_argument("--colsample_bytree", type=float, default=1.)
-        parser.add_argument("--output_dropout", type=float, default=0.)
-        parser.add_argument("--last_dropout", type=float, default=0.)
-        parser.add_argument("--last_as_output", type=int, default=0)
-        parser.add_argument("--min_temp", type=float, default=1e-2)
-        parser.add_argument("--anneal_steps", type=int, default=4000)
+        """Add argparse arguments."""
+        parser = super().add_model_specific_results(parser)
+        parser.add_argument("--min_temp", type=float, default=1e-2, help="The min temperature.")
+        parser.add_argument("--anneal_steps", type=int, default=4000,
+                            help="Temp annealing schedule decays from max to min temp in 4k steps.")
 
         parser.add_argument("--choice_fn", default='EM15Temp',
-                            help="Choose the dataset.",
+                            help="Use SoftMax, GumbelSoftMax or EntMax on the choice function of "
+                                 "trees.",
                             choices=['GSMTemp', 'SMTemp', 'EM15Temp'])
 
-        parser.add_argument("--entmoid_min_temp", type=float, default=1.,
-                            help="If smaller than 1, the shape function becomes jumpy.")
-        parser.add_argument("--entmoid_anneal_steps", type=int, default=4000,
-                            help="If smaller than 1, the shape function becomes jumpy.")
-
-        parser.add_argument("--selectors_detach", type=int, default=0)
-        parser.add_argument("--fs_normalize", type=int, default=1)
-        parser.add_argument("--init_bias", type=int, default=1)
-        parser.add_argument("--add_last_linear", type=int, default=1)
+        parser.add_argument("--selectors_detach", type=int, default=0,
+                            help="if 1, the selector will be detached before passing into the "
+                                 "next layer. This will save GPU memory in the large dataset "
+                                 "(e.g. Epsilon).")
 
         # Use GA2M
-        parser.add_argument("--ga2m", type=int, default=0)
-        parser.add_argument("--l2_interactions", type=float, default=0.)
-        parser.add_argument("--l1_interactions", type=float, default=0.)
+        parser.add_argument("--ga2m", type=int, default=0, help="If 1, train a GA2M. If 0, GAM.")
+        parser.add_argument("--l2_interactions", type=float, default=0.,
+                            help="Add L2 penalty on the interactions to decrease the learned "
+                                 "interaction effects. It does not improve in my exp.")
 
         # Change default value
         for action in parser._actions:
@@ -711,9 +863,11 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
 
     @classmethod
     def get_model_specific_rs_hparams(cls):
+        """Specify the range of hyperparameter search."""
         ch = np.random.choice
+
         def colsample_bytree_gen(args):
-            if args.dataset == 'compas': # At least 1, 2 features
+            if args.dataset == 'compas':  # At least 1, 2 features
                 if not args.ga2m:
                     return ch([1., 0.5, 0.1])
                 return ch([1., 0.5, 0.2])
@@ -723,81 +877,74 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
             return ch([1., 0.5, 0.2, 0.1])
 
         rs_hparams = {
-            # 'arch': dict(short_name='', gen=lambda args: np.random.choice(['GAM', 'GAMAtt'])),
             'seed': dict(short_name='s', gen=lambda args: int(np.random.randint(100))),
-            # 'seed': dict(short_name='s', gen=lambda args: 2),  # Fix seed; see other hparams
             'num_layers': dict(short_name='nl',
                                gen=lambda args: int(ch([2, 3, 4, 5]))),
             'num_trees': dict(short_name='nt',
                               # gen=lambda args: int(ch([4096, 8192, 16384, 32768, 32768*2]))),
-                              gen=lambda args: int(ch([500, 1000, 2000, 4000])) // args.num_layers),
-            'addi_tree_dim': dict(short_name='td',
-                                  gen=lambda args: int(ch([0, 1, 2]))),
-                                  # gen=lambda args: 0),
+                              gen=lambda args: int(ch([500, 1000, 2000,
+                                                       4000])) // args.num_layers),
             'depth': dict(short_name='d', gen=lambda args: int(ch([2, 4, 6]))),
-            'output_dropout': dict(short_name='od',
-                                   gen=lambda args: ch([0., 0.1, 0.2])),
+            'output_dropout': dict(short_name='od', gen=lambda args: ch([0., 0.1, 0.2])),
             'last_dropout': dict(short_name='ld',
-                                 gen=lambda args: (0. if not args.add_last_linear
-                                                   else ch([0., 0.15, 0.3]))),
+                                 gen=lambda args: (
+                                     0. if not args.add_last_linear
+                                     else ch([0., 0.15, 0.3]))),
             'colsample_bytree': dict(short_name='cs', gen=colsample_bytree_gen),
             'lr': dict(short_name='lr', gen=lambda args: ch([0.01, 0.005])),
-            'last_as_output': dict(short_name='lo', gen=lambda args: 0),
-            'l2_lambda': dict(short_name='la',
-                              gen=lambda args: float(ch([1e-5, 1e-6, 0.]))),
-            'pretrain': dict(short_name='pt'),
-            'pretraining_ratio': dict(
-                short_name='pr',
-            ),
-            'masks_noise': dict(
-                short_name='mn',
-                gen=lambda args: 0.1 if args.pretrain else 0),
-            'opt_only_last_layer': dict(
-                short_name='ol',
-                gen=lambda args: 0),
+            'l2_lambda': dict(short_name='la', gen=lambda args: float(ch([1e-5, 1e-6, 0.]))),
             'add_last_linear': dict(
                 short_name='ll',
-                gen=lambda args: (1 if (args.pretrain or args.arch == 'GAM')
-                                  else int(ch([0, 1]))),
+                gen=lambda args: int(ch([0, 1])),
             ),
         }
         return rs_hparams
 
     @classmethod
     def add_model_specific_results(cls, results, args):
+        """Record some model attributes into the csv result."""
+        # Record annealing steps
         results['anneal_steps'] = args.anneal_steps
         return results
 
 
 class GAMAttBlock(GAMBlock):
-    '''
-    Node-GAM with attention model. This is the one reported in the paper.
-    '''
-    def create_layers(self, input_dim, layer_dim, num_layers,
-                      tree_dim, max_features=None, **kwargs):
+    """Node-GAM with attention model."""
+
+    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+        """Create layers of oblivious trees.
+
+        Args:
+            input_dim: the dim of input features.
+            num_trees: the number of trees in a layer.
+            num_layers: the number of layers.
+            tree_dim: the output dimension of each tree.
+            kwargs: the kwargs for initializing GAMAtt ODST trees.
+        """
         layers = []
         prev_input_dim = 0
         for i in range(num_layers):
-            # Last layer only has num_classes dim
-            oddt = GAMAttODST(input_dim, layer_dim, tree_dim=tree_dim,
-                              flatten_output=True,
+            # Last layer only has the dimension equal to num_classes
+            oddt = GAMAttODST(input_dim, num_trees, tree_dim=tree_dim,
                               prev_input_dim=prev_input_dim, **kwargs)
             layers.append(oddt)
-            prev_input_dim += layer_dim * tree_dim
+            prev_input_dim += num_trees * tree_dim
         return layers
 
     @classmethod
     def add_model_specific_args(cls, parser):
+        """Add argparse arguments."""
         parser = super().add_model_specific_args(parser)
-        parser.add_argument("--dim_att", type=int, default=64)
+        parser.add_argument("--dim_att", type=int, default=8,
+                            help="The dimension of attention embedding to reduce # parameters.")
         return parser
 
     @classmethod
     def get_model_specific_rs_hparams(cls):
+        """Specify the range of hyperparameter search."""
         rs_hparams = super().get_model_specific_rs_hparams()
         ch = np.random.choice
         rs_hparams.update({
-            'dim_att': dict(short_name='da',
-                            gen=lambda args: int(ch([8, 16, 32]))),
+            'dim_att': dict(short_name='da', gen=lambda args: int(ch([8, 16, 24]))),
         })
         return rs_hparams

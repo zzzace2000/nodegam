@@ -1,3 +1,6 @@
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
 import numpy as np
 from sklearn.model_selection import ShuffleSplit, StratifiedShuffleSplit, \
     RandomizedSearchCV

@@ -1,3 +1,6 @@
+"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+
+
 import time
 import numpy as np
 import pandas as pd
