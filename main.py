@@ -32,8 +32,9 @@ import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 
-import lib
 from qhoptim.pyt import QHAdam
+import nodegam
+
 
 # Don't use multiple gpus; If more than 1 gpu, just use first one
 if torch.cuda.device_count() > 1:
@@ -48,6 +49,8 @@ def get_args():
     parser.add_argument("--name",
                         default='debug',
                         help="Name of this run. Used for monitoring and checkpointing.")
+    # Load hparams from a model name
+    parser.add_argument("--load_from_hparams", type=str, default=None)
     parser.add_argument('--seed', type=int, default=None,
                         help='seed for initializing training.')
     # My own arguments
@@ -105,7 +108,7 @@ def get_args():
     prev_hparams = load_from_prev_hparams(temp_args)
     if prev_hparams is not None and all([not arg.startswith('--arch') for arg in sys.argv]):
         temp_args.arch = prev_hparams['arch']
-    parser = getattr(lib.arch, temp_args.arch + 'Block').add_model_specific_args(parser)
+    parser = getattr(nodegam.arch, temp_args.arch + 'Block').add_model_specific_args(parser)
     args = parser.parse_args()
 
     # If loading previous hparams, update prev hparams with user inputs
@@ -171,11 +174,11 @@ def main():
     # Create a directory to record what is running
     os.makedirs('is_running', exist_ok=True)
 
-    rs_hparams = getattr(lib.arch, args.arch + 'Block').get_model_specific_rs_hparams()
+    rs_hparams = getattr(nodegam.arch, args.arch + 'Block').get_model_specific_rs_hparams()
 
     # This makes every random search as the same order!
     if args.seed is not None:
-        lib.seed_everything(args.seed)
+        nodegam.utils.seed_everything(args.seed)
 
     orig_name, num_random_search = args.name, args.random_search
     args.random_search = 0  # When sending jobs, not run the random search!!
@@ -219,18 +222,18 @@ def train(args) -> None:
 
     # Set seed
     if args.seed is not None:
-        lib.utils.seed_everything(args.seed)
+        nodegam.utils.seed_everything(args.seed)
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     # Data
-    with lib.utils.Timer(f'Load dataset {args.dataset}'):
-        data = lib.DATASETS[args.dataset.upper()](path='./data', fold=args.fold)
+    with nodegam.utils.Timer(f'Load dataset {args.dataset}'):
+        data = nodegam.data.DATASETS[args.dataset.upper()](path='./data', fold=args.fold)
 
     # Dataset-dependent quantile noise. If it's set too small, the categorical features
     # will not get enough value. In general 1e-3 is a good value.
     qn = data.get('quantile_noise', 1e-3)
-    preprocessor = lib.MyPreprocessor(
+    preprocessor = nodegam.data.MyPreprocessor(
         cat_features=data.get('cat_features', None),
         y_normalize=(data['problem'] == 'regression'),
         random_state=1337, quantile_transform=True,
@@ -283,7 +286,7 @@ def train(args) -> None:
 
     print(f'X_train: {X_train.shape}, X_valid: {X_valid.shape}, X_test: {X_test.shape}')
     # Model
-    model, step_callbacks = getattr(lib.arch, args.arch + 'Block').load_model_by_hparams(
+    model, step_callbacks = getattr(nodegam.arch, args.arch + 'Block').load_model_by_hparams(
         args, ret_step_callback=True)
 
     # Initialize bias before sending to cuda
@@ -294,7 +297,7 @@ def train(args) -> None:
 
     optimizer_params = {'nus': (0.7, 1.0), 'betas': (0.95, 0.998)}
 
-    trainer = lib.Trainer(
+    trainer = nodegam.trainer.Trainer(
         model=model,
         experiment_name=args.name,
         warm_start=True,  # To handle the interruption on v server
@@ -337,13 +340,13 @@ def train(args) -> None:
 
     # To make sure when rerunning the err history and time are accurate,
     # we save the whole history in training.json.
-    recorder = lib.Recorder(path=pjoin('logs', args.name))
+    recorder = nodegam.recorder.Recorder(path=pjoin('logs', args.name))
 
-    ntf_diff, ntf = 0., None  # Record number of trees assigned to each feature
     st_time = time.time()
-    for batch in lib.iterate_minibatches(X_train, y_train,
-                                         batch_size=args.batch_size,
-                                         shuffle=True, epochs=float('inf')):
+    is_first_run = True
+    for batch in nodegam.utils.iterate_minibatches(X_train, y_train,
+                                                   batch_size=args.batch_size,
+                                                   shuffle=True, epochs=float('inf')):
         # Handle removing missing by sampling from a Gaussian!
         metrics = trainer.train_on_batch(*batch, device=device)
 
@@ -356,8 +359,7 @@ def train(args) -> None:
             trainer.average_checkpoints(out_tag='avg')
             trainer.load_checkpoint(tag='avg')
 
-            err = eval_fn(X_valid, y_valid,
-                          device=device, batch_size=args.batch_size * 2)
+            err = eval_fn(X_valid, y_valid, device=device, batch_size=args.batch_size * 2)
             if err < recorder.best_err:
                 recorder.best_err = err
                 recorder.best_step_err = trainer.step
@@ -376,18 +378,10 @@ def train(args) -> None:
                 save_loss_fig(recorder.loss_history, recorder.err_history,
                               pjoin('loss_figs', f'{args.name}.jpg'))
 
-            cur_ntf = trainer.model.get_num_trees_assigned_to_each_feature()
-            if cur_ntf is None:  # ODST no NTF
-                ntf_diff = 0.
-            else:
-                if ntf is not None:
-                    ntf_diff = (torch.sum(torch.abs(cur_ntf - ntf)) * 100.0 / torch.sum(cur_ntf)).item()
-                ntf = cur_ntf
-
-            if trainer.step == 1:
-                print("Step\tVal_Err\tTime(s)\tNTF(%)")
-            print('{}\t{}\t{:.0f}\t{:.2f}%'.format(
-                trainer.step, np.around(err, 5), recorder.run_time, ntf_diff))
+            if is_first_run:
+                print("Step\tVal_Err\tTime(s)")
+                is_first_run = False
+            print('{}\t{}\t{:.0f}'.format(trainer.step, np.around(err, 5), recorder.run_time))
 
         bstep = recorder.best_step_err
         if isinstance(bstep, list):
@@ -395,8 +389,7 @@ def train(args) -> None:
 
         min_steps = max(bstep, getattr(args, 'anneal_steps', -1))
         if trainer.step > min_steps + args.early_stopping_rounds:
-            print('BREAK. There is no improvment for {} steps'.format(
-                args.early_stopping_rounds))
+            print('BREAK. There is no improvment for {} steps'.format(args.early_stopping_rounds))
             break
 
         if args.lr_decay_steps > 0 \
@@ -421,8 +414,7 @@ def train(args) -> None:
     max_step = trainer.step
     # Run test time
     trainer.load_checkpoint(tag='best')
-    test_err = eval_fn(X_test, y_test,
-                       device=device, batch_size=2 * args.batch_size)
+    test_err = eval_fn(X_test, y_test, device=device, batch_size=2 * args.batch_size)
     print("Test Error rate: {}".format(test_err))
 
     # Save csv results
@@ -436,17 +428,17 @@ def train(args) -> None:
     results['fp16'] = args.fp16
     results['batch_size'] = args.batch_size
     # Append the hyperparameters
-    rs_hparams = getattr(lib.arch, args.arch + 'Block').get_model_specific_rs_hparams()
+    rs_hparams = getattr(nodegam.arch, args.arch + 'Block').get_model_specific_rs_hparams()
     for k in rs_hparams:
         results[k] = getattr(args, k)
 
-    results = getattr(lib.arch, args.arch + 'Block').add_model_specific_results(results, args)
+    results = getattr(nodegam.arch, args.arch + 'Block').add_model_specific_results(results, args)
     results['name'] = args.name
 
     os.makedirs(f'results', exist_ok=True)
     dataset_postfix = f'_ds{args.data_subsample}' if args.data_subsample != 1. else ''
     csv_file = f'results/{args.dataset}{dataset_postfix}_{args.arch}.csv'
-    lib.utils.output_csv(csv_file, results)
+    nodegam.utils.output_csv(csv_file, results)
     print('output results to %s' % csv_file)
 
     # Clean up
@@ -469,8 +461,7 @@ def choose_batch_size(trainer, X_train, y_train, device, max_bs=4096, min_bs=64)
     while True:
         try:
             if bs < min_bs:
-                raise RuntimeError('The batch size %d is smaller than mininum %d'
-                                   % (bs, min_bs))
+                raise RuntimeError('The batch size %d is smaller than mininum %d' % (bs, min_bs))
             print('Trying batch size %d ...' % bs)
             trainer.train_on_batch(
                 X_train[shuffle_indices[:bs]], y_train[shuffle_indices[:bs]],

@@ -3,7 +3,7 @@ import time
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import lib
+import nodegam
 import torch, torch.nn as nn
 import torch.nn.functional as F
 import argparse
@@ -15,7 +15,7 @@ from filelock import FileLock
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 import pickle
-from lib.gams import model_utils
+from nodegam.gams import model_utils
 from sklearn.metrics import roc_auc_score, average_precision_score
 import pandas as pd
 
@@ -52,7 +52,7 @@ def get_args():
     args = parser.parse_args()
 
     # Set seed
-    lib.utils.seed_everything(args.seed)
+    nodegam.utils.seed_everything(args.seed)
 
     # Remove debug folder
     if args.name == 'debug':
@@ -78,7 +78,7 @@ def main(args) -> None:
     os.makedirs(pjoin('logs', args.name), exist_ok=True)
 
     # Data
-    data = lib.DATASETS[args.dataset.upper()](path='./data', fold=args.fold)
+    data = nodegam.data.DATASETS[args.dataset.upper()](path='./data', fold=args.fold)
     X_train, X_test, y_train, y_test = \
         data['X_train'], data['X_test'], data['y_train'], data['y_test']
 
@@ -95,7 +95,7 @@ def main(args) -> None:
 
     # Do target transform
     if 'cat_features' in data:
-        preprocessor = lib.MyPreprocessor(
+        preprocessor = nodegam.data.MyPreprocessor(
             cat_features=data.get('cat_features', None),
         )
 
@@ -160,7 +160,7 @@ def main(args) -> None:
                                       time.time() - start_time))
     os.makedirs(f'results', exist_ok=True)
     ds_str = f'_ds{args.data_subsample}' if args.data_subsample != 1. else ''
-    lib.utils.output_csv(f'results/baselines_{args.dataset}{ds_str}.csv', result)
+    nodegam.utils.output_csv(f'results/baselines_{args.dataset}{ds_str}.csv', result)
 
     open(pjoin('logs', args.name, 'MY_IS_FINISHED'), 'a')
 

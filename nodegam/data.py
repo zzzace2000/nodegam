@@ -43,7 +43,7 @@ class MyPreprocessor:
                 resulting data, the noise is only applied for QuantileTransformer.
 
         Example:
-            >>> preprocessor = lib.MyPreprocessor(
+            >>> preprocessor = nodegam.MyPreprocessor(
             >>>     cat_features=['ethnicity', 'gender'],
             >>>     y_normalize=True,
             >>>     random_state=1337,

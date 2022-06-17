@@ -6,6 +6,7 @@ import numpy as np
 
 
 class EncodingBase(object):
+    """A base class for handling label or onehot encoding."""
     def get_GAM_df(self, x_values_lookup=None, **kwargs):
         # Make x_values_lookup as onehot encoding!
         if x_values_lookup is not None:

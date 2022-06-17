@@ -20,14 +20,14 @@ from .utils import process_in_chunks, Timer
 class ODSTBlock(nn.Sequential):
     """Original NODE model adapted from https://github.com/Qwicen/node."""
 
-    def __init__(self, input_dim, num_trees, num_layers, num_classes=1,
+    def __init__(self, in_features, num_trees, num_layers, num_classes=1,
                  addi_tree_dim=0,
                  output_dropout=0.0, init_bias=True, add_last_linear=True,
                  last_dropout=0., l2_lambda=0., **kwargs):
         """Neural Oblivious Decision Ensembles (NODE).
 
         Args:
-            input_dim: the input dimension of dataset.
+            in_features: the input dimension of dataset.
             num_trees: how many ODST trees in a layer.
             num_layers: how many layers of trees.
             num_classes: how many classes to predict. It's the output dim.
@@ -40,7 +40,7 @@ class ODSTBlock(nn.Sequential):
                 linear year.
             l2_lambda: add a l2 penalty on the outputs of trees.
         """
-        layers = self.create_layers(input_dim, num_trees, num_layers,
+        layers = self.create_layers(in_features, num_trees, num_layers,
                                     tree_dim=num_classes + addi_tree_dim,
                                     **kwargs)
         super().__init__(*layers)
@@ -70,11 +70,11 @@ class ODSTBlock(nn.Sequential):
             if param.requires_grad:
                 self.named_params_requires_grad.add(name)
 
-    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+    def create_layers(self, in_features, num_trees, num_layers, tree_dim, **kwargs):
         """Create layers of oblivious trees.
 
         Args:
-            input_dim: the dim of input features.
+            in_features: the dim of input features.
             num_trees: the number of trees in a layer.
             num_layers: the number of layers.
             tree_dim: the output dimension of each tree.
@@ -82,8 +82,8 @@ class ODSTBlock(nn.Sequential):
         """
         layers = []
         for i in range(num_layers):
-            oddt = ODST(input_dim, num_trees, tree_dim=tree_dim, **kwargs)
-            input_dim = input_dim + num_trees * tree_dim
+            oddt = ODST(in_features, num_trees, tree_dim=tree_dim, **kwargs)
+            in_features = in_features + num_trees * tree_dim
             layers.append(oddt)
         return layers
 
@@ -108,7 +108,7 @@ class ODSTBlock(nn.Sequential):
             with torch.no_grad():
                 tmp = torch.cat([l.get_feature_selectors() for l in self],
                                 dim=1)
-                # ^-- [input_dim, layers * num_trees, 1]
+                # ^-- [in_features, layers * num_trees, 1]
                 op_masks = torch.einsum('bi,ied->bed', feature_masks, tmp)
             outputs = outputs * (1. - op_masks)
 
@@ -181,7 +181,7 @@ class ODSTBlock(nn.Sequential):
         It's helpful for logging. Just to see how many trees focus on some features.
 
         Returns:
-            counts: shape of [num_layers, num_input_features (input_dim)].
+            counts: shape of [num_layers, num_input_features (in_features)].
         """
         if type(self) is ODSTBlock:
             return None
@@ -202,7 +202,7 @@ class ODSTBlock(nn.Sequential):
         assert args.arch == 'ODST', 'Wrong arch: ' + args.arch
 
         model = ODSTBlock(
-            input_dim=args.input_dim,
+            in_features=args.in_features,
             num_trees=args.num_trees,
             num_layers=args.num_layers,
             num_classes=args.num_classes,
@@ -398,7 +398,7 @@ class GAMAdditiveMixin(object):
         under each main or interaction term for each example.
 
         Args:
-            x: inputs to the model. A Pytorch Tensor of [batch_size, input_dim].
+            x: inputs to the model. A Pytorch Tensor of [batch_size, in_features].
     
         Returns:
             result: a tensor with shape [batch_size, num_unique_terms, output_dim] where
@@ -618,10 +618,10 @@ class GAMAdditiveMixin(object):
         """
         fs = torch.cat([l.get_feature_selectors() for l in self], dim=1).sum(dim=-1)
         fs[fs > 0.] = 1.
-        # ^-- [input_dim, layers*num_trees] binary features
+        # ^-- [in_features, layers*num_trees] binary features
 
         result = torch.unique(fs, dim=1, sorted=True, return_inverse=return_inverse)
-        # ^-- ([input_dim, uniq_terms], [layers*num_trees])
+        # ^-- ([in_features, uniq_terms], [layers*num_trees])
 
         terms = result
         if isinstance(result, tuple):  # return inverse=True
@@ -639,7 +639,7 @@ class GAMAdditiveMixin(object):
         """Make onehot or multi-hot vectors into a list of integers or tuple.
 
         Args:
-            terms: a pytorch tensor of [input_dim, uniq_terms].
+            terms: a pytorch tensor of [in_features, uniq_terms].
 
         Returns:
             tuple_terms: a list of integers or tuples with the size of uniq_terms.
@@ -680,11 +680,11 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
 
         self.inv_is_interaction = None
 
-    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+    def create_layers(self, in_features, num_trees, num_layers, tree_dim, **kwargs):
         """Create layers.
 
         Args:
-            input_dim: the input dimension (feature).
+            in_features: the input dimension (feature).
             num_trees: number of trees in a layer.
             num_layers: number of layers.
             tree_dim: the dimension of the tree's output. Usually equal to num of classes.
@@ -693,7 +693,7 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         layers = []
         for i in range(num_layers):
             # Last layer only has num_classes dim
-            oddt = GAM_ODST(input_dim, num_trees, tree_dim=tree_dim, **kwargs)
+            oddt = GAM_ODST(in_features, num_trees, tree_dim=tree_dim, **kwargs)
             layers.append(oddt)
         return layers
 
@@ -739,13 +739,13 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         """Run the examples through the layers of trees.
 
         Args:
-            x: the input tensor of shape [batch_size, input_dim].
+            x: the input tensor of shape [batch_size, in_features].
             return_fs: if True, it returns the feature selectors of each tree.
 
         Returns:
             outputs: the trees' outputs [batch_size, num_trees, tree_dim].
             prev_feature_selectors: (Optional) if return_fs is True, this returns the feature
-                selector of each ODST tree of shape [input_dim, num_trees, tree_depth].
+                selector of each ODST tree of shape [in_features, num_trees, tree_depth].
         """
         initial_features = x.shape[-1]
         prev_feature_selectors = None
@@ -794,7 +794,7 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         # Temperature annealing for entmoid
         bin_function = nn_utils.entmoid15
         kwargs = dict(
-            input_dim=args.input_dim,
+            in_features=args.in_features,
             num_trees=args.num_trees,
             num_layers=args.num_layers,
             num_classes=args.num_classes,
@@ -827,7 +827,7 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
     @classmethod
     def add_model_specific_args(cls, parser):
         """Add argparse arguments."""
-        parser = super().add_model_specific_results(parser)
+        parser = super().add_model_specific_args(parser)
         parser.add_argument("--min_temp", type=float, default=1e-2, help="The min temperature.")
         parser.add_argument("--anneal_steps", type=int, default=4000,
                             help="Temp annealing schedule decays from max to min temp in 4k steps.")
@@ -911,24 +911,24 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
 class GAMAttBlock(GAMBlock):
     """Node-GAM with attention model."""
 
-    def create_layers(self, input_dim, num_trees, num_layers, tree_dim, **kwargs):
+    def create_layers(self, in_features, num_trees, num_layers, tree_dim, **kwargs):
         """Create layers of oblivious trees.
 
         Args:
-            input_dim: the dim of input features.
+            in_features: the dim of input features.
             num_trees: the number of trees in a layer.
             num_layers: the number of layers.
             tree_dim: the output dimension of each tree.
             kwargs: the kwargs for initializing GAMAtt ODST trees.
         """
         layers = []
-        prev_input_dim = 0
+        prev_in_features = 0
         for i in range(num_layers):
             # Last layer only has the dimension equal to num_classes
-            oddt = GAMAttODST(input_dim, num_trees, tree_dim=tree_dim,
-                              prev_input_dim=prev_input_dim, **kwargs)
+            oddt = GAMAttODST(in_features, num_trees, tree_dim=tree_dim,
+                              prev_in_features=prev_in_features, **kwargs)
             layers.append(oddt)
-            prev_input_dim += num_trees * tree_dim
+            prev_in_features += num_trees * tree_dim
         return layers
 
     @classmethod

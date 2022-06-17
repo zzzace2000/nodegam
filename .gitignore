@@ -6,7 +6,7 @@ results/
 data/
 logs/
 loss_figs/
-pid_ref/
+resources/pid_ref/
 run.sh
 test.py
 

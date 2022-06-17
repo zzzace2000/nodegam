@@ -25,9 +25,10 @@ class MyExtractLogOddsMixin(MyCommonBase):
     to deal with a black-box model that is hard to extract the marginal plot from it. It can then
     use "get_GAM_df(self, x_values_lookup=None)" to extract.
 
-    Requirement: the cls needs to implement one of:
-    1) predict(): this is for regression model.
-    2) predict_proba(): this is for binary classification.
+    Requirement:
+        the cls needs to implement one of:
+        1) predict(): this is for regression model.
+        2) predict_proba(): this is for binary classification.
     """
 
     def extract_log_odds(self, log_odds):

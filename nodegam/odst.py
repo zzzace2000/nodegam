@@ -14,13 +14,10 @@ MIN_LOGITS = -20
 
 
 class ODST(ModuleWithInit):
-    def __init__(self, input_dim, num_trees, depth=6, tree_dim=1,
-                 choice_function=entmax15, bin_function=entmoid15,
-                 initialize_response_=nn.init.normal_,
-                 initialize_selection_logits_=nn.init.uniform_,
-                 threshold_init_beta=1.0, threshold_init_cutoff=1.0,
-                 colsample_bytree=1.,
-                 ):
+    def __init__(self, input_dim, num_trees, depth=6, tree_dim=1, choice_function=entmax15,
+                 bin_function=entmoid15, initialize_response_=nn.init.normal_,
+                 initialize_selection_logits_=nn.init.uniform_, threshold_init_beta=1.0,
+                 threshold_init_cutoff=1.0, colsample_bytree=1., **kwargs):
         """Oblivious Differentiable Sparsemax Trees. http://tinyurl.com/odst-readmore.
 
         One can drop (sic!) this module anywhere instead of nn.Linear
@@ -60,15 +57,18 @@ class ODST(ModuleWithInit):
                 argument as in xgboost package. If less than 1, for each tree, it will only choose a
                 fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
                 will only selects among 90% of the features.
+            kwargs: for other old unused arguments for compatibility reasons.
         """
         super().__init__()
         self.input_dim, self.depth, self.num_trees, self.tree_dim = \
             input_dim, depth, num_trees, tree_dim
         self.choice_function, self.bin_function = choice_function, bin_function
-        self.threshold_init_beta, self.threshold_init_cutoff = threshold_init_beta, threshold_init_cutoff
+        self.threshold_init_beta, self.threshold_init_cutoff = \
+            threshold_init_beta, threshold_init_cutoff
         self.colsample_bytree = colsample_bytree
 
-        self.response = nn.Parameter(torch.zeros([num_trees, tree_dim, 2 ** depth]), requires_grad=True)
+        self.response = nn.Parameter(torch.zeros([num_trees, tree_dim, 2 ** depth]),
+                                     requires_grad=True)
         initialize_response_(self.response)
 
         self.num_sample_feats = input_dim
@@ -117,7 +117,8 @@ class ODST(ModuleWithInit):
         feature_values = self.get_feature_selection_values(input)
         # ^--[batch_size, num_trees, depth]
 
-        threshold_logits = (feature_values - self.feature_thresholds) * torch.exp(-self.log_temperatures)
+        threshold_logits = (feature_values - self.feature_thresholds) \
+                           * torch.exp(-self.log_temperatures)
 
         threshold_logits = torch.stack([-threshold_logits, threshold_logits], dim=-1)
         # ^--[batch_size, num_trees, depth, 2]
@@ -210,14 +211,10 @@ class ODST(ModuleWithInit):
 
 
 class GAM_ODST(ODST):
-    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6,
-                 choice_function=entmax15, bin_function=entmoid15,
-                 initialize_response_=nn.init.normal_,
-                 initialize_selection_logits_=nn.init.uniform_,
-                 colsample_bytree=1.,
-                 selectors_detach=False,
-                 fs_normalize=True,
-                 ga2m=0):
+    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
+                 bin_function=entmoid15, initialize_response_=nn.init.normal_,
+                 initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
+                 selectors_detach=False, fs_normalize=True, ga2m=0, **kwargs):
         """A layer of GAM ODST trees.
 
         Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
@@ -244,6 +241,7 @@ class GAM_ODST(ODST):
             fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
                 True do not make too much difference in performance.
             ga2m: if set to 1, use GA2M, else use GAM.
+            kwargs: for other old unused arguments for compatibility reasons.
         """
         if ga2m:
             # If specified as GA2M, but the tree depth is set to just 1 that can not model GA2M.
@@ -396,12 +394,10 @@ class GAM_ODST(ODST):
 
 
 class GAMAttODST(GAM_ODST):
-    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6,
-                 choice_function=entmax15, bin_function=entmoid15,
-                 initialize_response_=nn.init.normal_,
-                 initialize_selection_logits_=nn.init.uniform_,
-                 colsample_bytree=1., selectors_detach=False, ga2m=0,
-                 prev_input_dim=0, dim_att=8):
+    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
+                 bin_function=entmoid15, initialize_response_=nn.init.normal_,
+                 initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
+                 selectors_detach=False, ga2m=0, prev_input_dim=0, dim_att=8, **kwargs):
         """A layer of GAM ODST trees with attention mechanism.
 
         Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
@@ -430,6 +426,7 @@ class GAMAttODST(GAM_ODST):
             ga2m: if set to 1, use GA2M, else use GAM.
             prev_input_dim: the number of previous layers' outputs.
             dim_att: the dimension of attention embedding to reduce memory consumption.
+            kwargs: for other old unused arguments for compatibility reasons.
         """
         assert prev_input_dim > 0, 'Need to specify the previous input dim.'
         super().__init__(

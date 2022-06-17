@@ -2,7 +2,7 @@
 
 This repository is the official implementation of [NODE GAM: Differentiable Generalized Additive Model for Interpretable Deep Learning](https://arxiv.org/abs/2106.01613). 
 
-<img src="./images/Fig1.png" width=600px>
+<img src="https://github.com/zzzace2000/nodegam/blob/main/resources/images/Fig1.png?raw=true" width=600px>
 
 ## Requirements
 
@@ -15,14 +15,16 @@ pip install -r requirements.txt
 
 ## Training
 
-Please see the following colab notebook. This is a simplified notebook for how to train and visualize a NODE-GA2M on Bikeshare.
+Please see the following colab notebook for how to train and visualize a NODE-GA2M on Bikeshare.
 https://colab.research.google.com/drive/1C_gBoSc1AlQ7VvCXVWiU-7X3YjQZTiZI?usp=sharing
+
+And see more examples under `notebooks/`
 
 We provide the hyperparmeters we use in `best_hparams/`.  
 To reproduce our results, e.g. NODE-GA2M trained in fold 0 (total 5 folds) of bikeshare, you can run 
 
 ```bash
-python main.py --name 0603_best_bikeshare_f0 --load_from_hparams best_hparams/node_ga2m/0519_f0_best_bikeshare_GAM_ga2m_s83_nl4_nt125_td1_d6_od0.0_ld0.3_cs0.5_lr0.01_lo0_la0.0_pt0_pr0_mn0_ol0_ll1 --fold 0
+python main.py --name 0603_best_bikeshare_f0 --load_from_hparams resources/best_hparams/node_ga2m/0519_f0_best_bikeshare_GAM_ga2m_s83_nl4_nt125_td1_d6_od0.0_ld0.3_cs0.5_lr0.01_lo0_la0.0_pt0_pr0_mn0_ol0_ll1 --fold 0
 ```
 
 The models will be stored in `logs/0603_best_bikeshare_f0/`. And the results including test/val error are stored in `results/bikeshare_GAM.csv`
@@ -43,8 +45,8 @@ The result is shown in `results/baselines_bikeshare.csv` and the model is stored
 To visualize the model, run this in a notebook:
 
 ```python
-from lib.gams.vis_utils import vis_main_effects
-from lib.utils import average_GAMs
+from nodegam.gams.vis_utils import vis_main_effects
+from nodegam.utils import average_GAMs
 
 df_dict = {
     'node_ga2m': average_GAMs([
@@ -64,7 +66,19 @@ See bikeshare visualization.ipynb which we provide all graphs for all models (NO
 
 ## Results
 
-See the Table 1 and 2 of our paper. We show our NODE-GAM and NODE-GA2M is competitive with other GAMs including EBM and Spline.
+See the Table 1 and 2 of our [paper](https://arxiv.org/abs/2106.01613).
+
+## Citations
+
+If you find the code useful, please cite:
+```
+@inproceedings{chang2021node,
+  title={NODE-GAM: Neural Generalized Additive Model for Interpretable Deep Learning},
+  author={Chang, Chun-Hao and Caruana, Rich and Goldenberg, Anna},
+  booktitle={International Conference on Learning Representations},
+  year={2021}
+}
+```
 
 
 ## Contributing

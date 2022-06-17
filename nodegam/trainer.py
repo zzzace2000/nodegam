@@ -144,6 +144,8 @@ class Trainer(nn.Module):
     def get_latest_file(self, pattern):
         path = get_latest_file(pattern)
         if path is None:
+            if self.verbose:
+                print('No previous checkpoints found. Train from scratch.')
             return None
 
         # Remove files not saved correctly

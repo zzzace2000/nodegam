@@ -99,7 +99,6 @@ def get_latest_file(pattern):
     """
     list_of_files = glob.glob(pattern) # * means all if need specific format then *.csv
     if len(list_of_files) == 0:
-        print('No files found!')
         return None
     return max(list_of_files, key=os.path.getctime)
 
