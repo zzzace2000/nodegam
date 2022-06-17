@@ -6,7 +6,13 @@ This repository is the official implementation of [NODE GAM: Differentiable Gene
 
 ## Requirements
 
-To install requirements:
+To install the package, run
+```bash
+pip install nodegam
+```
+And follow the notebooks or the main file in this repo.
+
+Or you can install requirements by:
 
 ```bash
 pip install -r requirements.txt

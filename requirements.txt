@@ -12,7 +12,7 @@ prefetch_generator
 requests
 category_encoders
 filelock
-https://github.com/facebookresearch/qhoptim/archive/master.zip
+qhoptim
 mat4py
 interpret
 pygam
