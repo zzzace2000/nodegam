@@ -115,8 +115,11 @@ class MyPreprocessor:
             for i, t in enumerate(self.transformers):
                 # Leave one out transform when it's training set
                 X = t.transform(X)
-            # The LeaveOneOutEncoder makes it as np.float64 instead of 32
-            X = X.astype(np.float32)
+
+        # Make everything as numpy and float32
+        if isinstance(X, pd.DataFrame):
+            X = X.values
+        X = X.astype(np.float32)
 
         if len(args) == 1:
             return X
@@ -127,6 +130,7 @@ class MyPreprocessor:
 
         if self.y_normalize and self.y_mu is not None and self.y_std is not None:
             y = (y - self.y_mu) / self.y_std
+            y = y.astype(np.float32)
 
         return X, y
 

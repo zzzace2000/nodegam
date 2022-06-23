@@ -76,7 +76,7 @@ class Trainer(nn.Module):
             # In my datasets I only have binary classification
             self.loss_function = (lambda x, y: F.binary_cross_entropy_with_logits(x, y.float()))
         elif problem == 'regression':
-            self.loss_function = F.mse_loss
+            self.loss_function = (lambda y1, y2: F.mse_loss(y1.float(), y2.float()))
         elif problem.startswith('pretrain'): # Not used
             self.loss_function = None
         else:
