@@ -1,5 +1,6 @@
 """Data preprocessors and functions."""
 
+import base64
 import bz2
 import gzip
 import os
@@ -11,128 +12,11 @@ from zipfile import ZipFile
 import numpy as np
 import pandas as pd
 import requests
-from category_encoders import LeaveOneOutEncoder
 from sklearn.datasets import load_svmlight_file
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import QuantileTransformer, StandardScaler
-import base64
 from tqdm import tqdm
 
-
-class MyPreprocessor:
-    def __init__(self, random_state=1377, cat_features=None, normalize=False,
-                 y_normalize=False, quantile_transform=False,
-                 output_distribution='normal', n_quantiles=2000,
-                 quantile_noise=1e-3):
-        """Preprocessor does the data preprocessing like input and target normalization.
-
-        Args:
-            random_state: global random seed for an experiment.
-            cat_features: if passed in, it does the target encoding for these features before other
-                input normalization like quantile transformation. Default: None.
-            normalize: standardize features by removing the mean and scaling to unit variance.
-            y_normalize: if True, it standardizes the targets y by setting the mean and stdev to 0
-                and 1. Useful in the regression setting.
-            quantile_transform: transforms the features to follow a normal or uniform distribution.
-            output_distribution: choose between ['normal', 'uniform']. Data is projected onto this
-                distribution. See the same param of sklearn QuantileTransformer. 'normal' is better.
-            n_quantiles: number of quantiles to estimate the distribution. Default: 2000.
-            quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise
-                with std = :quantile_noise: * data.std; this will cause discrete values to be more
-                separable. Please note that this transformation does NOT apply gaussian noise to the
-                resulting data, the noise is only applied for QuantileTransformer.
-
-        Example:
-            >>> preprocessor = nodegam.MyPreprocessor(
-            >>>     cat_features=['ethnicity', 'gender'],
-            >>>     y_normalize=True,
-            >>>     random_state=1337,
-            >>>     quantile_transform=True,
-            >>>     output_distribution='normal',
-            >>> )
-            >>> preprocessor.fit(X_train, y_train)
-            >>> X_train, y_train = preprocessor.transform(X_train, y_train)
-        """
-
-        self.random_state = random_state
-        self.cat_features = cat_features
-        self.normalize = normalize
-        self.y_normalize = y_normalize
-        self.quantile_transform = quantile_transform
-        self.output_distribution = output_distribution
-        self.quantile_noise = quantile_noise
-        self.n_quantiles = n_quantiles
-
-        self.transformers = []
-        self.y_mu, self.y_std = None, None
-        self.feature_names = None
-
-    def fit(self, X, y=None):
-        assert isinstance(X, pd.DataFrame), 'X is not a dataframe! %s' % type(X)
-        self.feature_names = X.columns
-
-        if self.cat_features is not None:
-            cat_encoder = LeaveOneOutEncoder(cols=self.cat_features)
-            cat_encoder.fit(X, y)
-            self.transformers.append(cat_encoder)
-
-        if self.normalize:
-            scaler = StandardScaler(copy=False)
-            scaler.fit(X)
-            self.transformers.append(scaler)
-
-        if self.quantile_transform:
-            quantile_train = X.copy()
-            if self.cat_features is not None:
-                quantile_train = cat_encoder.transform(quantile_train)
-
-            if self.quantile_noise:
-                r = np.random.RandomState(self.random_state)
-                stds = np.std(quantile_train.values, axis=0, keepdims=True)
-                noise_std = self.quantile_noise / np.maximum(stds, self.quantile_noise)
-                quantile_train += noise_std * r.randn(*quantile_train.shape)
-
-            qt = QuantileTransformer(random_state=self.random_state,
-                                     n_quantiles=self.n_quantiles,
-                                     output_distribution=self.output_distribution,
-                                     copy=False)
-            qt.fit(quantile_train)
-            self.transformers.append(qt)
-
-        if y is not None and self.y_normalize:
-            self.y_mu, self.y_std = y.mean(axis=0), y.std(axis=0)
-            print("Normalize y. mean = {}, std = {}".format(self.y_mu, self.y_std))
-
-    def transform(self, *args):
-        assert len(args) <= 2
-
-        X = args[0]
-        if len(self.transformers) > 0:
-            X = X.copy()
-            if isinstance(X, np.ndarray):
-                X = pd.DataFrame(X, columns=self.feature_names)
-
-            for i, t in enumerate(self.transformers):
-                # Leave one out transform when it's training set
-                X = t.transform(X)
-
-        # Make everything as numpy and float32
-        if isinstance(X, pd.DataFrame):
-            X = X.values
-        X = X.astype(np.float32)
-
-        if len(args) == 1:
-            return X
-
-        y = args[1]
-        if y is None:
-            return X, None
-
-        if self.y_normalize and self.y_mu is not None and self.y_std is not None:
-            y = (y - self.y_mu) / self.y_std
-            y = y.astype(np.float32)
-
-        return X, y
+from .mypreprocessor import MyPreprocessor
 
 
 def download(url, filename, delete_if_interrupted=True, chunk_size=4096):

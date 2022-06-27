@@ -14,6 +14,6 @@ category_encoders
 filelock
 qhoptim
 mat4py
-interpret
+interpret>=0.2
 pygam
 seaborn

@@ -16,7 +16,8 @@ class Timer:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         time_diff = float(time.time() - self.start_time)
-        time_str = '{:.1f}s'.format(time_diff) if time_diff >= 1 else '{:.0f}ms'.format(time_diff * 1000)
+        time_str = '{:.1f}s'.format(time_diff) if time_diff >= 1 \
+            else '{:.0f}ms'.format(time_diff * 1000)
 
         print('Finish "{}" in {}'.format(self.name, time_str))
 
@@ -41,11 +42,13 @@ def output_csv(the_path, data_dict, order=None, delimiter=','):
 
                 additional_keys = [k for k in keys if k not in old_order]
                 if len(additional_keys) > 0:
-                    print('WARNING! The data_dict has following additional keys %s' % (str(additional_keys)))
+                    print('WARNING! The data_dict has following additional keys %s'
+                          % (str(additional_keys)))
 
                 no_key = [k for k in old_order if k not in keys]
                 if len(no_key) > 0:
-                    raise(RuntimeError('The data_dict does not have the following old keys: %s' % str(no_key)))
+                    raise(RuntimeError('The data_dict does not have the following old keys: %s'
+                                       % str(no_key)))
 
                 keys = old_order + additional_keys
 

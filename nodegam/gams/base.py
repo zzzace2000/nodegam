@@ -1,7 +1,7 @@
 """GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from .utils import get_X_values_counts
 
@@ -37,7 +37,9 @@ class MyExtractLogOddsMixin(MyCommonBase):
 
         all_X = np.ones((1 + np.sum(split_lens), len(self.feature_names)), dtype='float64')
 
-        for f_idx, (feature_name, s_idx, e_idx) in enumerate(zip(self.feature_names, [0] + cum_lens[:-1].tolist(), cum_lens)):
+        for f_idx, (feature_name, s_idx, e_idx) in enumerate(
+            zip(self.feature_names, [0] + cum_lens[:-1].tolist(), cum_lens)
+        ):
             x = log_odds[feature_name]['x_val']
 
             all_X[(1 + s_idx):(1 + e_idx), f_idx] = x
@@ -87,7 +89,8 @@ class MyExtractLogOddsMixin(MyCommonBase):
 
             model_y_val = v['y_val']
             if x_values_lookup is not None:
-                model_xs, passed_xs = np.array(list(self.X_values_counts[feat_name].keys())), np.array(x_values_lookup[feat_name])
+                model_xs, passed_xs = np.array(list(self.X_values_counts[feat_name].keys())), \
+                                      np.array(x_values_lookup[feat_name])
 
                 if len(model_xs) != len(passed_xs) or np.any(model_xs != passed_xs):
                     y_lookup = pd.Series(v['y_val'], v['x_val'])

@@ -86,6 +86,20 @@ def check_numpy(x):
     return x
 
 
+def sigmoid_np(x):
+    """A sigmoid function for numpy array.
+
+    Args:
+        x: numpy array.
+
+    Returns:
+        the sigmoid value.
+    """
+    return np.where(x >= 0,
+                    1 / (1 + np.exp(-x)),
+                    np.exp(x) / (1 + np.exp(x)))
+
+
 @contextlib.contextmanager
 def nop_ctx():
     yield None
@@ -483,6 +497,15 @@ def load_hparams(the_dir):
 
 
 def average_GAMs(gam_dirs, **kwargs):
+    """Take average of GAM models to derive mean and stdev from their model names.
+
+    Args:
+        gam_dirs: a list of model name. E.g. ['0603_bikeshare']. The model has to be stored under
+            "logs/{name}".
+
+    Returns:
+        df: the averaged dataframe with mean, stdev and the importance.
+    """
     all_dfs = [extract_GAM_from_saved_dir(pjoin('logs', d), **kwargs) for d in gam_dirs]
 
     df = average_GAM_dfs(all_dfs)

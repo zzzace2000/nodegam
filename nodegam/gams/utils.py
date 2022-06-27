@@ -1,12 +1,13 @@
 """GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
 
 
+import copy
 import time
+
 import numpy as np
 import pandas as pd
-from scipy import interpolate
-import copy
 from pandas.api.types import is_string_dtype
+from scipy import interpolate
 
 
 def get_GAM_df_by_models(models, x_values_lookup=None, aggregate=True):
@@ -110,13 +111,22 @@ def get_X_values_counts(X, feature_names=None):
     if isinstance(X, np.ndarray):
         X = pd.DataFrame(X, columns=feature_names)
         # return {'f%d' % idx: dict(zip(*np.unique(X[:, idx], return_counts=True))) for idx in range(X.shape[1])}
-    return X.apply(lambda x: x.value_counts().sort_index().to_dict(), axis=0)
+    result = X.apply(lambda x: x.value_counts().sort_index().to_dict(), axis=0)
+    result.index = feature_names
+    return result
 
 
 def bin_data(X, max_n_bins=256):
-    '''
-    Do a quantile binning for the X
-    '''
+    """Do a quantile binning for the X.
+
+    Args:
+        X: the pandas table or numpy array with shape as [N, D] where N is number of samples
+            and D is number of features.
+        max_n_bins: the maximum number of bins per feature. Default: 256.
+
+    Returns:
+        Binned X with the same input type (pandas table or numpy array).
+    """
     X = X.copy()
     for col_name, dtype in zip(X.dtypes.index, X.dtypes):
         if is_string_dtype(dtype): # categorical
@@ -146,6 +156,15 @@ def bin_data(X, max_n_bins=256):
 
 
 def get_x_values_lookup(X, feature_names=None):
+    """Get x values lookup.
+
+    Args:
+        X: input features. Numpy array or pandas dataframe.
+
+    Returns:
+        x_values_lookup: a dictionary with key as feature name and the value is all unique values
+            of that feature.
+    """
     if isinstance(X, np.ndarray):
         if feature_names is None:
             feature_names = ['f%d' for idx in range(X.shape[1])]
@@ -159,7 +178,7 @@ def get_x_values_lookup(X, feature_names=None):
     }
 
 def my_interpolate(x, y, new_x):
-    ''' Handle edge cases for interpolation '''
+    """Handle edge cases for interpolation."""
     assert len(x) == len(y)
 
     if len(x) == 1:
@@ -203,7 +222,7 @@ class DotDict(dict):
 
 
 def extract_GAM(X, predict_fn, predict_type='binary_logodds', max_n_bins=None):
-    '''
+    """
     X: input 2d array
     predict_fn: the model prediction function
     predict_type: choose from ["binary_logodds", "binary_prob", "regression"]
@@ -211,7 +230,7 @@ def extract_GAM(X, predict_fn, predict_type='binary_logodds', max_n_bins=None):
     max_n_bins: default set as None (No binning). It bins the value into
         this number of buckets to reduce the resulting GAM graph clutterness.
         Should set large enough to not change prediction too much.
-    '''
+    """
     assert isinstance(X, pd.DataFrame)
 
     if max_n_bins is not None:

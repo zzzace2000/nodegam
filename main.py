@@ -7,11 +7,11 @@
 - Set ga2m = 1 if training a GA2M, or 0 for training GAM.
 
 - Output:
-  - The final test accuracy is stored in the results/bikeshare_GAMAtt.csv.
-  - The best model is stored in the logs/0615_bikeshare/best.ckpt.
-  - The hyperparameter is stored in logs/hparams/0615_bikeshare.
-  - The training and validation loss figure is in loss_figs/0615_bikeshare.jpg.
-  - The training and validation results are stored in logs/0615_bikeshare/recorder.json,
+    - The final test accuracy is stored in the results/bikeshare_GAMAtt.csv.
+    - The best model is stored in the logs/0615_bikeshare/best.ckpt.
+    - The hyperparameter is stored in logs/hparams/0615_bikeshare.
+    - The training and validation loss figure is in loss_figs/0615_bikeshare.jpg.
+    - The training and validation results are stored in logs/0615_bikeshare/recorder.json,
     loss_history.npy (training loss history per step), and err_history.npy (val err history).
 """
 
@@ -30,11 +30,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+from qhoptim.pyt import QHAdam
 from sklearn.model_selection import train_test_split
 
-from qhoptim.pyt import QHAdam
 import nodegam
-
 
 # Don't use multiple gpus; If more than 1 gpu, just use first one
 if torch.cuda.device_count() > 1:
@@ -233,7 +232,7 @@ def train(args) -> None:
     # Dataset-dependent quantile noise. If it's set too small, the categorical features
     # will not get enough value. In general 1e-3 is a good value.
     qn = data.get('quantile_noise', 1e-3)
-    preprocessor = nodegam.data.MyPreprocessor(
+    preprocessor = nodegam.mypreprocessor.MyPreprocessor(
         cat_features=data.get('cat_features', None),
         y_normalize=(data['problem'] == 'regression'),
         random_state=1337, quantile_transform=True,

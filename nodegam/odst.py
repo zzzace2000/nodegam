@@ -14,7 +14,7 @@ MIN_LOGITS = -20
 
 
 class ODST(ModuleWithInit):
-    def __init__(self, input_dim, num_trees, depth=6, tree_dim=1, choice_function=entmax15,
+    def __init__(self, in_features, num_trees, depth=6, tree_dim=1, choice_function=entmax15,
                  bin_function=entmoid15, initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_, threshold_init_beta=1.0,
                  threshold_init_cutoff=1.0, colsample_bytree=1., **kwargs):
@@ -23,7 +23,7 @@ class ODST(ModuleWithInit):
         One can drop (sic!) this module anywhere instead of nn.Linear
 
         Args:
-            input_dim: number of features in the input tensor.
+            in_features: number of features in the input tensor.
             num_trees: number of trees in this layer.
             tree_dim: number of response channels in the response of individual tree.
             depth: number of splits in every tree.
@@ -60,8 +60,8 @@ class ODST(ModuleWithInit):
             kwargs: for other old unused arguments for compatibility reasons.
         """
         super().__init__()
-        self.input_dim, self.depth, self.num_trees, self.tree_dim = \
-            input_dim, depth, num_trees, tree_dim
+        self.in_features, self.depth, self.num_trees, self.tree_dim = \
+            in_features, depth, num_trees, tree_dim
         self.choice_function, self.bin_function = choice_function, bin_function
         self.threshold_init_beta, self.threshold_init_cutoff = \
             threshold_init_beta, threshold_init_cutoff
@@ -71,23 +71,23 @@ class ODST(ModuleWithInit):
                                      requires_grad=True)
         initialize_response_(self.response)
 
-        self.num_sample_feats = input_dim
+        self.num_sample_feats = in_features
         if self.colsample_bytree < 1.:
-            self.num_sample_feats = int(np.ceil(input_dim * self.colsample_bytree))
+            self.num_sample_feats = int(np.ceil(in_features * self.colsample_bytree))
 
         # Do the subsampling
-        if self.num_sample_feats < input_dim:
+        if self.num_sample_feats < in_features:
             self.colsample = nn.Parameter(
-                torch.zeros([input_dim, num_trees, 1]), requires_grad=False
+                torch.zeros([in_features, num_trees, 1]), requires_grad=False
             )
             for nt in range(num_trees):
-                rand_idx = torch.randperm(input_dim)[:self.num_sample_feats]
+                rand_idx = torch.randperm(in_features)[:self.num_sample_feats]
                 self.colsample[rand_idx, nt, 0] = 1.
 
         # Only when num_sample_feats > 1, we initialize this logit
         if self.num_sample_feats > 1 or self.colsample_bytree == 1.:
             self.feature_selection_logits = nn.Parameter(
-                torch.zeros([input_dim, num_trees, depth]), requires_grad=True
+                torch.zeros([in_features, num_trees, depth]), requires_grad=True
             )
             initialize_selection_logits_(self.feature_selection_logits)
 
@@ -112,7 +112,7 @@ class ODST(ModuleWithInit):
         assert len(input.shape) >= 2
         if len(input.shape) > 2:
             return self.forward(input.view(-1, input.shape[-1])).view(*input.shape[:-1], -1)
-        # new input shape: [batch_size, input_dim]
+        # new input shape: [batch_size, in_features]
 
         feature_values = self.get_feature_selection_values(input)
         # ^--[batch_size, num_trees, depth]
@@ -173,14 +173,14 @@ class ODST(ModuleWithInit):
         """Get the selected features of each tree.
 
         Args:
-            input: input data of shape [batch_size, input_dim].
+            input: input data of shape [batch_size, in_features].
 
         Returns:
             feature_values: the feature input to trees in a batch.
             Shape: [batch_size, num_trees, tree_depth].
         """
         feature_selectors = self.get_feature_selectors()
-        # ^--[input_dim, num_trees, depth]
+        # ^--[in_features, num_trees, depth]
 
         feature_values = torch.einsum('bi,ind->bnd', input, feature_selectors)
         # ^--[batch_size, num_trees, depth]
@@ -191,7 +191,7 @@ class ODST(ModuleWithInit):
         """Get the feature selectors of each tree of each depth.
 
         Returns:
-            feature_selectors: tensor of shape [input_dim, num_trees, tree_depth]. The values of
+            feature_selectors: tensor of shape [in_features, num_trees, tree_depth]. The values of
                 first dimension sum to 1.
         """
         if self.colsample_bytree < 1. and self.num_sample_feats == 1:
@@ -204,14 +204,14 @@ class ODST(ModuleWithInit):
         return feature_selectors
 
     def __repr__(self):
-        return "{}(input_dim={}, num_trees={}, depth={}, tree_dim={})".format(
-            self.__class__.__name__, self.input_dim,
+        return "{}(in_features={}, num_trees={}, depth={}, tree_dim={})".format(
+            self.__class__.__name__, self.in_features,
             self.num_trees, self.depth, self.tree_dim
         )
 
 
 class GAM_ODST(ODST):
-    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
+    def __init__(self, in_features, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
                  bin_function=entmoid15, initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
                  selectors_detach=False, fs_normalize=True, ga2m=0, **kwargs):
@@ -221,7 +221,7 @@ class GAM_ODST(ODST):
         to make it as a GAM or GA2M.
 
         Args:
-            input_dim: number of features in the input tensor.
+            in_features: number of features in the input tensor.
             num_trees: number of trees in this layer.
             tree_dim: number of response channels in the response of individual tree.
             depth: number of splits in every tree.
@@ -251,14 +251,14 @@ class GAM_ODST(ODST):
 
             # Similarly, if the colsample_by_tree is too small that each tree has only 1 feature,
             # increases it to 2.
-            if (colsample_bytree < 1. and int(np.ceil(input_dim * colsample_bytree)) < 2):
-                colsample_bytree = 2 / input_dim
+            if (colsample_bytree < 1. and int(np.ceil(in_features * colsample_bytree)) < 2):
+                colsample_bytree = 2 / in_features
 
-        if colsample_bytree >= input_dim:
+        if colsample_bytree >= in_features:
             colsample_bytree = 1
 
         super().__init__(
-            input_dim=input_dim,
+            in_features=in_features,
             num_trees=num_trees,
             depth=depth,
             tree_dim=tree_dim,
@@ -277,7 +277,7 @@ class GAM_ODST(ODST):
         del self.feature_selection_logits
         the_depth = 1 if not self.ga2m else 2
         self.feature_selection_logits = nn.Parameter(
-            torch.zeros([self.input_dim, self.num_trees, the_depth]), requires_grad=True
+            torch.zeros([self.in_features, self.num_trees, the_depth]), requires_grad=True
         )
         initialize_selection_logits_(self.feature_selection_logits)
 
@@ -302,7 +302,7 @@ class GAM_ODST(ODST):
         """Get the selected features of each tree.
 
         Args:
-            input: input data of shape [batch_size, input_dim].
+            input: input data of shape [batch_size, in_features].
             return_fss: if True, return the feature selectors.
 
         Returns:
@@ -311,7 +311,7 @@ class GAM_ODST(ODST):
             feature_selectors: (optional) the feature selectors.
         """
         feature_selectors = self.get_feature_selectors()
-        # ^--[input_dim, num_trees, depth=1]
+        # ^--[in_features, num_trees, depth=1]
 
         # A hack to pass this value outside of this function
         self.feature_selectors = feature_selectors
@@ -324,14 +324,14 @@ class GAM_ODST(ODST):
             self.feature_selectors = self.feature_selectors.unsqueeze(-2).expand(
                 -1, -1, self.tree_dim, -1
             ).reshape(shape[0], -1, shape[-1])
-            # ^--[input_dim, num_trees * tree_dim, depth]
+            # ^--[in_features, num_trees * tree_dim, depth]
 
-        if input.shape[1] > self.input_dim:  # The rest are previous layers
+        if input.shape[1] > self.in_features:  # The rest are previous layers
             # Check incoming data
             pfs, self.prev_feature_selectors = self.prev_feature_selectors, None
-            assert pfs.shape[:2] == (self.input_dim, input.shape[1] - self.input_dim), \
+            assert pfs.shape[:2] == (self.in_features, input.shape[1] - self.in_features), \
                 'Previous selectors does not have the same shape as the input: %s != %s' \
-                % (pfs.shape[:2], (self.input_dim, input.shape[1] - self.input_dim))
+                % (pfs.shape[:2], (self.in_features, input.shape[1] - self.in_features))
             fw = self.cal_prev_feat_weights(feature_selectors, pfs)
 
             feature_selectors = torch.cat([feature_selectors, fw], dim=0)
@@ -389,22 +389,22 @@ class GAM_ODST(ODST):
     def get_num_trees_assigned_to_each_feature(self):
         with torch.no_grad():
             fs = self.get_feature_selectors()
-            # ^-- [input_dim, num_trees, 1]
+            # ^-- [in_features, num_trees, 1]
             return (fs > 0).sum(dim=[1, 2])
 
 
 class GAMAttODST(GAM_ODST):
-    def __init__(self, input_dim, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
+    def __init__(self, in_features, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
                  bin_function=entmoid15, initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
-                 selectors_detach=False, ga2m=0, prev_input_dim=0, dim_att=8, **kwargs):
+                 selectors_detach=False, ga2m=0, prev_in_features=0, dim_att=8, **kwargs):
         """A layer of GAM ODST trees with attention mechanism.
 
         Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
         to make it as a GAM or GA2M. And also add an attention between layers.
 
         Args:
-            input_dim: number of features in the input tensor.
+            in_features: number of features in the input tensor.
             num_trees: number of trees in this layer.
             tree_dim: number of response channels in the response of individual tree.
             depth: number of splits in every tree.
@@ -424,13 +424,12 @@ class GAMAttODST(GAM_ODST):
             fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
                 True do not make too much difference in performance.
             ga2m: if set to 1, use GA2M, else use GAM.
-            prev_input_dim: the number of previous layers' outputs.
+            prev_in_features: the number of previous layers' outputs.
             dim_att: the dimension of attention embedding to reduce memory consumption.
             kwargs: for other old unused arguments for compatibility reasons.
         """
-        assert prev_input_dim > 0, 'Need to specify the previous input dim.'
         super().__init__(
-            input_dim=input_dim,
+            in_features=in_features,
             num_trees=num_trees,
             depth=depth,
             tree_dim=tree_dim,
@@ -444,18 +443,19 @@ class GAMAttODST(GAM_ODST):
             ga2m=ga2m,
         )
 
-        self.prev_input_dim = prev_input_dim
+        self.prev_in_features = prev_in_features
         self.dim_att = dim_att
 
-        # Save parameter
-        self.att_key = nn.Parameter(
-            torch.zeros([prev_input_dim, dim_att]), requires_grad=True
-        )
-        self.att_query = nn.Parameter(
-            torch.zeros([dim_att, self.num_trees]), requires_grad=True
-        )
-        initialize_selection_logits_(self.att_key)
-        initialize_selection_logits_(self.att_query)
+        # Save parameter for the first layer
+        if prev_in_features > 0:
+            self.att_key = nn.Parameter(
+                torch.zeros([prev_in_features, dim_att]), requires_grad=True
+            )
+            self.att_query = nn.Parameter(
+                torch.zeros([dim_att, self.num_trees]), requires_grad=True
+            )
+            initialize_selection_logits_(self.att_key)
+            initialize_selection_logits_(self.att_query)
 
     def cal_prev_feat_weights(self, feature_selectors, pfs):
         """Calculate the feature weights of the previous trees outputs.
@@ -472,6 +472,7 @@ class GAMAttODST(GAM_ODST):
                 Shape: [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
                 depth=2 in GA2M.
         """
+        assert self.prev_in_features > 0
         fw = super().cal_prev_feat_weights(feature_selectors, pfs)
         # ^--[prev_in_feats, num_trees, depth=1,2]
 

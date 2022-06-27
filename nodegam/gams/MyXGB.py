@@ -1,6 +1,7 @@
 """GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
 
 
+from sklearn.model_selection import train_test_split
 from xgboost import XGBClassifier, XGBRegressor
 
 from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, \
@@ -13,33 +14,24 @@ class MyXGBMixin(object):
         self,
         max_depth=1,
         random_state=1377,
-        learning_rate=None,
-        n_estimators=50000,
-        min_child_weight=1,
-        tree_method='exact',
-        reg_lambda=0,
+        n_estimators=5000,
         n_jobs=-1,
-        missing=None,
-        colsample_bytree=1.,
-        subsample=1.,
         # My own parameter
         model_cls=XGBClassifier,
-        validation_size=0.2,
+        validation_size=0.15,
         early_stopping_rounds=50,
         objective=None,
         **kwargs,
     ):
-        if learning_rate is None:
-            learning_rate = 0.1 if model_cls == XGBClassifier else 1.0
+        if objective is None:
+            objective = 'binary:logistic' if model_cls == XGBClassifier else 'reg:squarederror'
 
-        objective = 'binary:logistic' if model_cls == XGBClassifier else 'reg:squarederror'
+        self.objective = objective
         self.model = model_cls(
-            max_depth=max_depth, random_state=random_state, learning_rate=learning_rate,
-            n_estimators=n_estimators, min_child_weight=min_child_weight,
-            tree_method=tree_method, reg_lambda=reg_lambda,
-            n_jobs=n_jobs, objective=objective, missing=missing,
-            colsample_bytree=colsample_bytree,
-            subsample=subsample, **kwargs)
+            max_depth=max_depth, random_state=random_state,
+            n_estimators=n_estimators,
+            n_jobs=n_jobs, objective=objective,
+            **kwargs)
 
         self.validation_size = validation_size
         self.early_stopping_rounds = early_stopping_rounds
@@ -73,23 +65,6 @@ class MyXGBMixin(object):
 
     def set_params(self, *args, **kwargs):
         return self.model.set_params(*args, **kwargs)
-
-    @property
-    def param_distributions(self):
-        if isinstance(self.model, XGBClassifier):
-            return {
-                'learning_rate': [0.1, 0.05, 0.01],
-                'subsample': [1., 0.8, 0.6],
-                'min_child_weight': [0, 1, 2, 5, 10, 20, 50],
-                'colsample_bytree': [1., 0.8, 0.6],
-            }
-        else:
-            return {
-                'learning_rate': [1, 0.5, 0.1],
-                'subsample': [1., 0.8, 0.6],
-                'min_child_weight': [0, 1, 2, 5, 10, 20, 50],
-                'colsample_bytree': [1., 0.8, 0.6],
-            }
 
 
 class MyXGBClassifier(MyGAMPlotMixinBase, MyXGBMixin):

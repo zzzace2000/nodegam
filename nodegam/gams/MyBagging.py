@@ -1,4 +1,18 @@
-"""GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+"""Copied from https://github.com/zzzace2000/GAMs_models/.
+
+It implements the bagging of GAM models. Unlike sklearn implmementation of BaggingClassifier, it
+averages the logits instead of the probability to make sure the bagging of GAMs is still a GAM. It
+also implements the get_GAM_df() that automatically takes average of the GAMs under bagging.
+
+Usage:
+>>> from nodegam.gams.MyXGB import MyXGBClassifier
+>>> from nodegam.gams.MyBagging import MyBaggingClassifier
+>>> base_model = MyXGBClassifier()
+>>> # Train an XGB-GAM with 10 times bagging
+>>> bag_model = MyBaggingClassifier(base_model=base_model, n_estimators=10)
+>>> bag_model.fit(X, y)
+>>> df = bag_model.get_GAM_df()
+"""
 
 
 import numpy as np
@@ -12,16 +26,17 @@ from .utils import get_GAM_df_by_models, sigmoid
 
 class MyBaggingMixin(MyGAMPlotMixinBase):
     def get_GAM_df(self, x_values_lookup=None, get_y_std=True):
-        '''
-        Get the GAM graph parameter.
+        """Get the GAM graph parameter.
+
         Args:
-            - x_values_lookup: a dictionary of mapping feature name to its correpsonding unique increasing x
-                E.g. {'BUN': [1.1, 1.5, 3.1, 5.0], 'cancer': [0, 1]}
-            - get_y_std: to get the error bar of the y. It's slower if this is set to true. Default: True
+            x_values_lookup: a dictionary of mapping feature name to its correpsonding unique
+                increasing x. E.g. {'BUN': [1.1, 1.5, 3.1, 5.0], 'cancer': [0, 1]}.
+            get_y_std: to get the error bar of the y. It's slower if this is set to true.
+                Default: True
 
         Return:
-            A dataframe of GAM graph
-        '''
+            A dataframe of GAM graph.
+        """
 
         assert self.is_GAM, 'Only supports visualization when it is a GAM'
 
@@ -63,7 +78,8 @@ class MyBaggingMixin(MyGAMPlotMixinBase):
 
         # Calculate the importances
         importances = [-1.]
-        for feat_name, x, y in zip(first_df.feat_name.iloc[1:].values, first_df.x.iloc[1:].values, first_df.y.iloc[1:].values):
+        for feat_name, x, y in zip(first_df.feat_name.iloc[1:].values, first_df.x.iloc[1:].values,
+                                   first_df.y.iloc[1:].values):
             if feat_name in self.X_values_counts:
                 model_xs = np.unique(list(self.X_values_counts[feat_name].keys()))
 
@@ -73,7 +89,8 @@ class MyBaggingMixin(MyGAMPlotMixinBase):
                 else:
                     # new_map = pd.Series(y, index=x)
                     # model_ys = new_map[model_xs]
-                    importance = np.average(np.abs(y), weights=list(self.X_values_counts[feat_name].values()))
+                    importance = np.average(np.abs(y),
+                                            weights=list(self.X_values_counts[feat_name].values()))
             else:
                 print('No counts recorded for feature: %s. Skip' % feat_name)
                 importance = np.nan
@@ -86,16 +103,6 @@ class MyBaggingMixin(MyGAMPlotMixinBase):
     @property
     def is_GAM(self):
         return hasattr(self.base_estimator, 'is_GAM') and self.base_estimator.is_GAM
-
-    @property
-    def param_distributions(self):
-        base = self.base_estimator.param_distributions
-        if base is None:
-            return None
-
-        return {
-            'base_estimator__%s' % k: v for k, v in base.items()
-        }
 
 
 class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
@@ -129,7 +136,7 @@ class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
         self.not_revert = True
 
     def predict_proba(self, X, parallel=False):
-        """Modify it to be using the average of the log-odds instead of avg prob
+        """Modify it to be using the average of the log-odds instead of avg probobability.
 
         The predicted class probabilities of an input sample is computed as
         the mean predicted class probabilities of the base estimators in the
@@ -138,17 +145,17 @@ class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
         of an input sample represents the proportion of estimators predicting
         each class.
 
-        Parameters
-        ----------
-        X : {array-like, sparse matrix} of shape = [n_samples, n_features]
-            The training input samples. Sparse matrices are accepted only if
-            they are supported by the base estimator.
+        Args:
+            X: {array-like, sparse matrix} of shape = [n_samples, n_features]
+                The training input samples. Sparse matrices are accepted only if they are supported
+                by the base estimator.
+            parallel: if True, predict outputs using parallel threads to speed up. But in xgboost,
+                the base estimator already uses multiple threads so it actually slows down.
 
-        Returns
-        -------
-        p : array of shape = [n_samples, n_classes]
-            The class probabilities of the input samples. The order of the
-            classes corresponds to that in the attribute `classes_`.
+        Returns:
+            p:array of shape = [n_samples, n_classes].
+                The class probabilities of the input samples. The order of the classes corresponds
+                to that in the attribute `classes_`.
         """
 
         from sklearn.ensemble.bagging import _parallel_predict_proba
@@ -188,14 +195,18 @@ class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
         all_proba = np.stack(all_proba).astype(np.float64)
         mean_log_odds = np.nanmean(np.log(all_proba + eps) - np.log(1. - all_proba + eps), axis=0)
         if np.any(np.isnan(mean_log_odds)):
-            mean_log_odds = np.where(np.isnan(mean_log_odds), np.nanmean(mean_log_odds, axis=0), mean_log_odds)
+            mean_log_odds = np.where(np.isnan(mean_log_odds), np.nanmean(mean_log_odds, axis=0),
+                                     mean_log_odds)
 
         proba = sigmoid(mean_log_odds)
 
         return proba
 
-class MyBaggingLabelEncodingClassifier(LabelEncodingClassifierMixin, MyBaggingClassifierBase, MyCommonBase):
+
+class MyBaggingLabelEncodingClassifier(LabelEncodingClassifierMixin, MyBaggingClassifierBase,
+                                       MyCommonBase):
     pass
+
 
 class MyBaggingClassifier(OnehotEncodingClassifierMixin, MyBaggingClassifierBase, MyCommonBase):
     pass
@@ -230,7 +241,8 @@ class MyBaggingRegressorBase(MyBaggingMixin, BaggingRegressor):
         # Tell the encoding no need to do reversion in get_GAM_plot_df() 
         self.not_revert = True
 
-class MyBaggingLabelEncodingRegressor(LabelEncodingRegressorMixin, MyBaggingRegressorBase, MyCommonBase):
+class MyBaggingLabelEncodingRegressor(LabelEncodingRegressorMixin, MyBaggingRegressorBase,
+                                      MyCommonBase):
     pass
 
 class MyBaggingRegressor(OnehotEncodingRegressorMixin, MyBaggingRegressorBase, MyCommonBase):

@@ -81,12 +81,14 @@ def _get_lr_model_template(model_name, problem, cls_model_cls,
 
 
 def get_lr_model(model_name, problem, random_state=1377, **kwargs):
-    assert model_name.split('-')[0] == 'lr', 'the model_name is not in the supported format %s' % model_name
+    assert model_name.split('-')[0] == 'lr', 'the model_name is not in the supported format %s' \
+                                             % model_name
 
     reg_model_cls = MyLinearRegressionRidgeCV
     if model_name.startswith('lr-l1') and problem == 'regression':
         raise NotImplementedError(
-            'Somehow I can not override LassoCV. It has error key_error: no intercept...Not sure how to fix it')
+            'Somehow I can not override LassoCV. It has error key_error: no intercept...'
+            'Not sure how to fix it.')
 
     return _get_lr_model_template(model_name, problem, random_state,
                                   cls_model_cls=MyLogisticRegressionCV,
@@ -95,7 +97,8 @@ def get_lr_model(model_name, problem, random_state=1377, **kwargs):
 
 def get_mlr_model(model_name, problem, random_state=1377, **kwargs):
     ''' Get Marginal Logistic Regression '''
-    assert model_name.split('-')[0] == 'mlr', 'the model_name is not in the supported format %s' % model_name
+    assert model_name.split('-')[0] == 'mlr', 'the model_name is not in the supported format %s' \
+                                              % model_name
     return _get_lr_model_template(model_name, problem, random_state,
                                   cls_model_cls=MyMarginalLogisticRegressionCV,
                                   reg_model_cls=MyMarginalLinearRegressionCV,
@@ -130,7 +133,8 @@ def get_xgb_model(model_name, problem, random_state=1377, **kwargs):
         if param_str.startswith('d'):
             params['max_depth'] = int(param_str[1:])
         elif param_str == 'l':  # label-encoding instead of one-hot
-            the_cls = MyXGBLabelEncodingRegressor if problem == 'regression' else MyXGBLabelEncodingClassifier
+            the_cls = MyXGBLabelEncodingRegressor if problem == 'regression' \
+                else MyXGBLabelEncodingClassifier
         elif param_str.startswith('o'):
             bag_params['n_estimators'] = int(param_str[1:])
             is_bag = True
@@ -219,9 +223,11 @@ def get_ebm_model(model_name, problem, random_state=1377, **kwargs):
     from .MyEBM import MyExplainableBoostingClassifier, MyExplainableBoostingRegressor, \
         MyOnehotExplainableBoostingRegressor, MyOnehotExplainableBoostingClassifier
 
-    the_cls = MyExplainableBoostingRegressor if problem == 'regression' else MyExplainableBoostingClassifier
+    the_cls = MyExplainableBoostingRegressor if problem == 'regression' \
+        else MyExplainableBoostingClassifier
 
-    assert model_name.split('-')[0] == 'ebm', 'the model_name is not in the supported format %s' % model_name
+    assert model_name.split('-')[0] == 'ebm', 'the model_name is not in the supported format %s' \
+                                              % model_name
 
     # Understand the format
     params = {'random_state': random_state}
@@ -237,7 +243,8 @@ def get_ebm_model(model_name, problem, random_state=1377, **kwargs):
         elif param_str.startswith('r'):
             params['random_state'] = int(param_str[1:])
         elif param_str == 'h':  # onehot encoding
-            the_cls = MyOnehotExplainableBoostingRegressor if problem == 'regression' else MyOnehotExplainableBoostingClassifier
+            the_cls = MyOnehotExplainableBoostingRegressor if problem == 'regression' \
+                else MyOnehotExplainableBoostingClassifier
         else:
             raise NotImplementedError('the param_str is not in the supported format %s' % param_str)
 
@@ -254,7 +261,8 @@ def get_model(X_train, y_train, problem, model_name, random_state=1377, **kwargs
 
     for k in ['ebm', 'spline', 'skgbt', 'xgb', 'lr', 'mlr', 'ilr', 'rf', 'flam', 'rspline']:
         if model_name.startswith(k):
-            the_model = eval('get_%s_model' % k)(model_name, problem, random_state=random_state, **kwargs)
+            the_model = eval('get_%s_model' % k)(model_name, problem, random_state=random_state,
+                                                 **kwargs)
             break
     else:
         raise RuntimeError('No model class found with name %s' % model_name)

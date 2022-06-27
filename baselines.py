@@ -1,27 +1,40 @@
-import os, sys
-import time
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-import nodegam
-import torch, torch.nn as nn
-import torch.nn.functional as F
+"""Baseline training.
+
+(A) Baseline training.
+- Set name. E.g. 0615_bikeshare.
+- Set dataset. E.g. bikeshare.
+- Set model_name.
+    - (1) choose a base model like 'xgb' (Xgboost GAM), 'ebm' (EBM GAM), 'spline' (PyGAM Spline).
+    - (2) add a flag to indicate parameters.
+        - '-o10': it means the bagging for 10 times. Useful when training XGBoost to provide error
+            bar in the Xgboost GAM.
+        - '-s5': it means set the seed as 5.
+    - For example, if we want to train a XGB GAM with 10 bagging, we specify it as 'xgb-10'.
+    - If we want to train an EBM with outer_bag=10 and inner_bag=10, we specify it as 'ebm-o10-i10'.
+    - See more flags in the nodegam.gams.model_utils.py.
+
+- Output:
+    - The final test accuracy is stored in the results/baselines_bikeshare.csv.
+    - The best model is stored in the logs/0615_bikeshare/.
+    - The hyperparameter is stored in logs/hparams/0615_bikeshare.
+"""
+
 import argparse
 import json
-from os.path import join as pjoin, exists as pexists
-import shutil
-import platform
-from filelock import FileLock
-from pathlib import Path
-from sklearn.model_selection import train_test_split
+import os
 import pickle
-from nodegam.gams import model_utils
-from sklearn.metrics import roc_auc_score, average_precision_score
+import shutil
+import time
+from os.path import join as pjoin, exists as pexists
+
+import numpy as np
 import pandas as pd
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
 
+import nodegam
+from nodegam.gams import model_utils
 
-# Use it to create figure instead of interactive
-matplotlib.use('Agg')
 
 
 def get_args():

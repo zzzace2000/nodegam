@@ -1,8 +1,8 @@
 """GAM baselines adapted from https://github.com/zzzace2000/GAMs_models/."""
+from typing import Union
 
-
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 
 class EncodingBase(object):
@@ -31,7 +31,8 @@ class EncodingBase(object):
 
 class LabelEncodingFitMixin(EncodingBase):
     def convert_x_values_lookup(self, x_values_lookup=None):
-        need_label_encoding = hasattr(self, 'cat_columns') and len(self.cat_columns) > 0 and x_values_lookup is not None
+        need_label_encoding = hasattr(self, 'cat_columns') and len(self.cat_columns) > 0 \
+                              and x_values_lookup is not None
         if not need_label_encoding:
             return x_values_lookup
         
@@ -89,14 +90,20 @@ class LabelEncodingFitMixin(EncodingBase):
         for c in self.cat_columns:
             tmp = X[c].astype('category').cat
             self.num_to_cat_dict[c] = pd.Series(tmp.categories)
-            self.cat_to_num_dict[c] = pd.Series(range(len(tmp.categories)), index=tmp.categories.values)
+            self.cat_to_num_dict[c] = pd.Series(range(len(tmp.categories)),
+                                                index=tmp.categories.values)
         return X
 
     def my_transform(self, X):
         X = X.copy()
         for c in self.cat_columns:
-            val = self.cat_to_num_dict[c][X[c].values]
-            val = val.fillna(0)  # randomly assigned to a class
+            x_value = X[c]
+            # If some category values not in the training set, replace them with the most
+            # frequent value.
+            not_in_category = (~x_value.isin(set(self.cat_to_num_dict[c].index))).copy()
+            if not_in_category.any():
+                x_value.loc[not_in_category] = x_value.mode().iloc[0]
+            val = self.cat_to_num_dict[c][x_value]
             X.loc[:, c] = val.values
         return X
 
@@ -104,7 +111,8 @@ class LabelEncodingFitMixin(EncodingBase):
 class LabelEncodingClassifierMixin(LabelEncodingFitMixin):
     def predict_proba(self, X):
         # in bagging, the coming X is from numpy. Don't transform
-        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') and len(self.cat_columns) > 0:
+        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
+                and len(self.cat_columns) > 0:
             X = self.my_transform(X)
         return super().predict_proba(X)
 
@@ -112,14 +120,18 @@ class LabelEncodingClassifierMixin(LabelEncodingFitMixin):
 class LabelEncodingRegressorMixin(LabelEncodingFitMixin):
     def predict(self, X):
         # in bagging, the coming X is from numpy. Don't transform
-        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') and len(self.cat_columns) > 0:
+        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
+                and len(self.cat_columns) > 0:
             X = self.my_transform(X)
         return super().predict(X)
 
 
 class OnehotEncodingFitMixin(EncodingBase):
     def convert_x_values_lookup(self, x_values_lookup=None):
-        need_label_encoding = hasattr(self, 'cat_columns') and len(self.cat_columns) > 0 and x_values_lookup is not None
+        need_label_encoding = \
+            hasattr(self, 'cat_columns') \
+            and len(self.cat_columns) > 0 \
+            and x_values_lookup is not None
         if not need_label_encoding:
             return x_values_lookup
         
@@ -137,7 +149,7 @@ class OnehotEncodingFitMixin(EncodingBase):
         return x_values_lookup
 
     def revert_dataframe(self, df):
-        ''' Move the old onehot-encoding df to new non-onehot encoding one '''
+        """Move the old onehot-encoding df to new non-onehot encoding one."""
         need_label_encoding = hasattr(self, 'cat_columns') and len(self.cat_columns) > 0
         if not need_label_encoding:
             return df
@@ -147,14 +159,16 @@ class OnehotEncodingFitMixin(EncodingBase):
         onehot_features = []
         for c in self.cat_columns:
             logic = df.feat_name.apply(lambda x: x.startswith(c + '_'))
-            overall_logic_kept = logic if overall_logic_kept is None else (logic | overall_logic_kept)
+            overall_logic_kept = logic if overall_logic_kept is None \
+                else (Union[logic, overall_logic_kept])
             
             filtered = df[logic].copy()
             filtered['new_y_val'] = filtered.y.apply(lambda x: (x[1] - x[0]) if len(x) == 2 else 0.)
 
             # Record it into the X_values_counts
             if c not in self.X_values_counts:
-                values = [self.X_values_counts[f][1] if 1 in self.X_values_counts[f] else 0 for f in filtered.feat_name]
+                values = [self.X_values_counts[f][1] if 1 in self.X_values_counts[f] else 0
+                          for f in filtered.feat_name]
                 keys = filtered.feat_name.apply(lambda x: x[(len(c)+1):])
                 self.X_values_counts[c] = dict(zip(keys, values))
 
@@ -163,11 +177,13 @@ class OnehotEncodingFitMixin(EncodingBase):
             offset = np.average(filtered.new_y_val.values, weights=filtered.proportion.values)
             filtered.new_y_val -= offset
             
-            importance = np.average(np.abs(filtered.new_y_val.values), weights=filtered.proportion.values)
+            importance = np.average(np.abs(filtered.new_y_val.values),
+                                    weights=filtered.proportion.values)
             
             # Use indep Gaussian to estimate y_std
             if 'y_std' in filtered:
-                new_y_std = filtered.y_std.apply(lambda x: np.sqrt(x[0] ** 2 + x[1] ** 2) if len(x) == 2 else 0.)
+                new_y_std = filtered.y_std.apply(
+                    lambda x: np.sqrt(x[0] ** 2 + x[1] ** 2) if len(x) == 2 else 0.)
             
             onehot_features.append(dict(
                 feat_name=c, 
@@ -227,7 +243,8 @@ class OnehotEncodingFitMixin(EncodingBase):
 
     def predict(self, X):
         # in bagging, the coming X is from numpy. Don't transform
-        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') and len(self.cat_columns) > 0:
+        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
+                and len(self.cat_columns) > 0:
             X = self.transform_X_to_fit_model_feats(X)
 
         return super().predict(X)
@@ -236,7 +253,8 @@ class OnehotEncodingFitMixin(EncodingBase):
 class OnehotEncodingClassifierMixin(OnehotEncodingFitMixin):
     def predict_proba(self, X):
         # in bagging, the coming X is from numpy. Don't transform
-        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') and len(self.cat_columns) > 0:
+        if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
+                and len(self.cat_columns) > 0:
             X = self.transform_X_to_fit_model_feats(X)
 
         return super().predict_proba(X)

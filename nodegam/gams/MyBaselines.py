@@ -3,15 +3,16 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import OneHotEncoder, FunctionTransformer, StandardScaler, MinMaxScaler
-from sklearn.linear_model import LogisticRegressionCV, LinearRegression, RidgeCV, LassoCV
+from interpret.glassbox.ebm.ebm import EBMPreprocessor
+from interpret.utils import unify_data, autogen_schema
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.linear_model import LogisticRegressionCV, RidgeCV
+from sklearn.preprocessing import OneHotEncoder, FunctionTransformer, StandardScaler, MinMaxScaler
 
-from interpret.utils import unify_data, autogen_schema
-from interpret.glassbox.ebm.ebm import EBMPreprocessor
+from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, \
+    OnehotEncodingRegressorMixin, OnehotEncodingClassifierMixin
 from .base import MyGAMPlotMixinBase, MyCommonBase
-from .EncodingBase import LabelEncodingRegressorMixin, LabelEncodingClassifierMixin, OnehotEncodingRegressorMixin, OnehotEncodingClassifierMixin
 from .utils import my_interpolate
 
 
@@ -19,10 +20,12 @@ class MyTransformMixin(object):
     def transform(self, X):
         return X
 
+
 class MyTransformClassifierMixin(MyTransformMixin):
     def predict_proba(self, X):
         X = self.transform(X)
         return super().predict_proba(X)
+
 
 class MyTransformRegressionMixin(MyTransformMixin):
     def predict(self, X):
@@ -161,7 +164,8 @@ class MyIndicatorTransformMixin(object):
 
 # Somehow we need to set all the arguments on the parameter lists __init__ to avoid the error
 class MyLogisticRegressionCVBase(LogisticRegressionCV):
-    def __init__(self, Cs=12, cv=5, penalty='l2', random_state=1377, solver='lbfgs', max_iter=3000, n_jobs=-1, **kwargs):
+    def __init__(self, Cs=12, cv=5, penalty='l2', random_state=1377, solver='lbfgs', max_iter=3000,
+                 n_jobs=-1, **kwargs):
         super().__init__(Cs=Cs, cv=cv, penalty=penalty, random_state=random_state, solver=solver,
             max_iter=max_iter, n_jobs=n_jobs, **kwargs)
 
@@ -174,22 +178,34 @@ class MyLinearRegressionCVBase(RidgeCV):
         super().__init__(alphas, **kwargs)
     
 
-class MyLogisticRegressionCV(OnehotEncodingClassifierMixin, MyGAMPlotMixinBase, MyStandardizedTransformMixin, MyTransformClassifierMixin, MyLogisticRegressionCVBase):
+class MyLogisticRegressionCV(OnehotEncodingClassifierMixin, MyGAMPlotMixinBase,
+                             MyStandardizedTransformMixin, MyTransformClassifierMixin,
+                             MyLogisticRegressionCVBase):
     pass
 
-class MyLinearRegressionRidgeCV(OnehotEncodingRegressorMixin, MyGAMPlotMixinBase, MyStandardizedTransformMixin, MyTransformRegressionMixin, MyLinearRegressionCVBase):
+class MyLinearRegressionRidgeCV(OnehotEncodingRegressorMixin, MyGAMPlotMixinBase,
+                                MyStandardizedTransformMixin, MyTransformRegressionMixin,
+                                MyLinearRegressionCVBase):
     pass
 
-class MyMarginalLogisticRegressionCV(LabelEncodingClassifierMixin, MyGAMPlotMixinBase, MyEBMPreprocessorTransformMixin, MyMarginalizedTransformMixin, MyTransformClassifierMixin, MyLogisticRegressionCVBase):
+class MyMarginalLogisticRegressionCV(LabelEncodingClassifierMixin, MyGAMPlotMixinBase,
+                                     MyEBMPreprocessorTransformMixin, MyMarginalizedTransformMixin,
+                                     MyTransformClassifierMixin, MyLogisticRegressionCVBase):
     pass
 
-class MyMarginalLinearRegressionCV(LabelEncodingRegressorMixin, MyGAMPlotMixinBase, MyEBMPreprocessorTransformMixin, MyMarginalizedTransformMixin, MyTransformRegressionMixin, MyLinearRegressionCVBase):
+class MyMarginalLinearRegressionCV(LabelEncodingRegressorMixin, MyGAMPlotMixinBase,
+                                   MyEBMPreprocessorTransformMixin, MyMarginalizedTransformMixin,
+                                   MyTransformRegressionMixin, MyLinearRegressionCVBase):
     pass
 
-class MyIndicatorLogisticRegressionCV(LabelEncodingClassifierMixin, MyGAMPlotMixinBase, MyEBMPreprocessorTransformMixin, MyIndicatorTransformMixin, MyTransformClassifierMixin, MyLogisticRegressionCVBase):
+class MyIndicatorLogisticRegressionCV(LabelEncodingClassifierMixin, MyGAMPlotMixinBase,
+                                      MyEBMPreprocessorTransformMixin, MyIndicatorTransformMixin,
+                                      MyTransformClassifierMixin, MyLogisticRegressionCVBase):
     pass
 
-class MyIndicatorLinearRegressionCV(LabelEncodingRegressorMixin, MyGAMPlotMixinBase, MyEBMPreprocessorTransformMixin, MyIndicatorTransformMixin, MyTransformRegressionMixin, MyLinearRegressionCVBase):
+class MyIndicatorLinearRegressionCV(LabelEncodingRegressorMixin, MyGAMPlotMixinBase,
+                                    MyEBMPreprocessorTransformMixin, MyIndicatorTransformMixin,
+                                    MyTransformRegressionMixin, MyLinearRegressionCVBase):
     pass
 
 class MyRandomForestClassifier(LabelEncodingClassifierMixin, MyCommonBase, RandomForestClassifier):
