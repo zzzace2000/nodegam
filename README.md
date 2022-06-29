@@ -14,48 +14,50 @@ differentiable. See this [blog post](https://medium.com/@chkchang21/interpretabl
 pip install nodegam
 ```
 
-## Introducing the NodeGAM
+## The performance and the runtime of the NodeGAM package
 
-NodeGAM compared to other GAMs (EBM, XGB-GAM), and XGB.
-We find NodeGAM often performs better in larger datasets.
+We compare NodeGAM with other GAMs (EBM, XGB-GAM), and XGB in 6 datasets.
+All models use default parameters, so the performance of NodeGAM here is lower than what paper 
+reported. We find NodeGAM often performs better in larger datasets.
 
 3 classification datasets:
 
 | Dataset/AUROC | Domain   | N    | P  | NodeGAM           | EBM               | XGB-GAM       | XGB               |
 |---------------|----------|------|----|-------------------|-------------------|---------------|-------------------|
-| MIMIC-II      | Medicine | 25K  | 17 | **0.843 ± 0.018** | 0.842 ± 0.019     | 0.833 ± 0.019 | **0.843 ± 0.02**  |
-| Adult         | Finance  | 33K  | 14 | 0.916 ± 0.003     | **0.927 ± 0.003** | 0.925 ± 0.002 | **0.927 ± 0.002** |
-| Credit        | Finance  | 285K | 30 | **0.989 ± 0.005** | 0.984 ± 0.007     | 0.986 ± 0.008 | 0.983 ± 0.009     |
+| MIMIC-II      | Medicine | 25K  | 17 | 0.844 ± 0.018     | 0.842 ± 0.019     | 0.833 ± 0.02  | **0.845 ± 0.019** |
+| Adult         | Finance  | 33K  | 14 | 0.916 ± 0.002     | **0.927 ± 0.003** | 0.925 ± 0.002 | **0.927 ± 0.002** |
+| Credit        | Finance  | 285K | 30 | **0.989 ± 0.008** | 0.984 ± 0.007     | 0.985 ± 0.008 | 0.984 ± 0.01      |
 
 3 regression datasets:
 
-| Dataset/RMSE | Domain | N    | P  | NodeGAM        | EBM            | XGB-GAM         | XGB                |
-|--------------|--------|------|----|----------------|----------------|-----------------|--------------------|
-| Wine         | Nature | 5K   | 12 | 0.703 ± 0.011  | 0.69 ± 0.011   | 0.714 ± 0.007   | **0.688 ± 0.013**  |
-| Bikeshare    | Retail | 17K  | 16 | 54.711 ± 0.736 | 55.676 ± 0.327 | 101.072 ± 0.995 | **45.364 ± 1.155** |
-| Year         | Music  | 515K | 90 | **9.031**      | 9.204          | 9.255           | 9.066              |
+| Dataset/RMSE | Domain | N    | P  | NodeGAM           | EBM            | XGB-GAM         | XGB                |
+|--------------|--------|------|----|-------------------|----------------|-----------------|--------------------|
+| Wine         | Nature | 5K   | 12 | 0.705 ± 0.012     | 0.69 ± 0.011   | 0.713 ± 0.006   | **0.682 ± 0.023**  |
+| Bikeshare    | Retail | 17K  | 16 | 57.438 ± 3.899    | 55.676 ± 0.327 | 101.093 ± 0.946 | **45.212 ± 1.254** |
+| Year         | Music  | 515K | 90 | **9.013 ± 0.004** | 9.204 ± 0.0    | 9.257 ± 0.0     | 9.049 ± 0.0        |
 
-We find the run time of our model increases mildly with growing data size due to mini-batch 
-training, while our baselines increase training time in several magnitudes.
+We also find the run time of our model increases mildly with growing data size due to mini-batch 
+training, while our baselines increase training time much more.
 
 3 classification datasets:
 
-| Dataset/Seconds | Domain   | N    | P  | NodeGAM  | EBM       | XGB-GAM       | XGB           |
-|-----------------|----------|------|----|----------|-----------|---------------|---------------|
-| MIMIC-II        | Medicine | 25K  | 17 | 94 ± 16  | 5.0 ± 1.0 | **0.0 ± 0.0** | 0.7 ± 0.6     |
-| Adult           | Finance  | 33K  | 14 | 113 ± 25 | 11.0 ± 1  | 6 ± 3         | **1.7 ± 0.6** |
-| Credit          | Finance  | 285K | 30 | 122 ± 27 | 36 ± 1    | 21 ± 6        | **14 ± 1**    |
+| Dataset/Seconds | Domain   | N    | P  | NodeGAM      | EBM        | XGB-GAM       | XGB            |
+|-----------------|----------|------|----|--------------|------------|---------------|----------------|
+| MIMIC-II        | Medicine | 25K  | 17 | 105.0 ± 14.0 | 6.0 ± 2.0  | **0.0 ± 1.0** | 1.0 ± 1.0      |
+| Adult           | Finance  | 33K  | 14 | 196.0 ± 56.0 | 15.0 ± 8.0 | 6.0 ± 0.0     | **1.0 ± 0.0**  |
+| Credit          | Finance  | 285K | 30 | 113.0 ± 36.0 | 37.0 ± 2.0 | 26.0 ± 7.0    | **16.0 ± 2.0** |
 
 3 regression datasets:
 
-| Dataset/Seconds | Domain | N    | P  | NodeGAM  | EBM       | XGB-GAM       | XGB           |
-|-----------------|--------|------|----|----------|-----------|---------------|---------------|
-| Wine            | Nature | 5K   | 12 | 104 ± 24 | 3.3 ± 1.5 | **0.0 ± 0.0** | **0.0 ± 0.0** |
-| Bikeshare       | Retail | 17K  | 16 | 222 ± 31 | 15 ± 2    | **1.0 ± 0.0** | 1.7 ± 0.6     |
-| Year            | Music  | 515K | 90 | **266**  | 496       | 310           | 399           |
+| Dataset/Seconds | Domain | N    | P  | NodeGAM          | EBM         | XGB-GAM       | XGB           |
+|-----------------|--------|------|----|------------------|-------------|---------------|---------------|
+| Wine            | Nature | 5K   | 12 | 157.0 ± 86.0     | 4.0 ± 2.0   | **0.0 ± 0.0** | **0.0 ± 0.0** |
+| Bikeshare       | Retail | 17K  | 16 | 223.0 ± 23.0     | 15.0 ± 3.0  | **1.0 ± 1.0** | 2.0 ± 1.0     |
+| Year            | Music  | 515K | 90 | **318.0 ± 20.0** | 501.0 ± 8.0 | 376.0 ± 1.0   | 537.0 ± 1.0   |
 
+Reproducing notebook is [here](https://nbviewer.jupyter.org/github/zzzace2000/nodegam/blob/main/notebooks/benchmark%20speed%20and%20acc%20of%20the%20package.ipynb).
 
-To see the full result, see the Table 1 and 2 of our [paper](https://arxiv.org/abs/2106.01613).
+See the Table 1 and 2 of our [paper](https://arxiv.org/abs/2106.01613) for more comparisons.
 
 
 ## NodeGAM Training
