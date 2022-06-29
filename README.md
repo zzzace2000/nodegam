@@ -87,7 +87,7 @@ vis_GAM_effects({
 
 <img src="https://github.com/zzzace2000/nodegam/blob/main/resources/images/example_toy_nodegam.png?raw=true" width=600px>
 
-See the `notebooks/toy dataset with nodegam sklearn.ipynb` [here](https://nbviewer.jupyter.org/github/zzzace2000/nodegam/blob/master/notebooks/toy%20dataset%20with%20nodegam%20sklearn.ipynb).
+See the `notebooks/toy dataset with nodegam sklearn.ipynb` [here](https://nbviewer.jupyter.org/github/zzzace2000/nodegam/blob/main/notebooks/toy%20dataset%20with%20nodegam%20sklearn.ipynb).
 
 
 ### Notebook training
@@ -160,7 +160,7 @@ fig, ax = vis_GAM_effects(
 
 <img src="https://github.com/zzzace2000/nodegam/blob/main/resources/images/example_gam_plot.png?raw=true" width=600px>
 
-See the `notebooks/toy dataset with nodegam sklearn.ipynb` [here](https://nbviewer.jupyter.org/github/zzzace2000/nodegam/blob/master/notebooks/toy%20dataset%20with%20nodegam%20sklearn.ipynb) for an example.
+See the `notebooks/toy dataset with nodegam sklearn.ipynb` [here](https://nbviewer.jupyter.org/github/zzzace2000/nodegam/blob/main/notebooks/toy%20dataset%20with%20nodegam%20sklearn.ipynb) for an example.
 
 
 ### Python file
