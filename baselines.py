@@ -53,14 +53,18 @@ def get_args():
                         help='Choose from 0 to 4, as we only support 5-fold CV.')
 
     ## Which model and dataset to run
-    # E.g. model_name could be 'ebm-o10-i10' which means EBM model with 10 outer bags and 10 inner bags
-    #   It can also be used as 'spline'.
+    # E.g. model_name could be 'ebm-o10-i10' which means EBM model with 10 outer bags and 10 inner
+    # bags.
     parser.add_argument('--model_name', type=str, default='xgb-o10')
-    parser.add_argument('--dataset', type=str, default='credit')
+    parser.add_argument('--dataset', type=str, default='mimic2',
+                        help="Choose the dataset.",
+                        choices=['year', 'epsilon', 'higgs', 'microsoft', 'yahoo', 'click',
+                                 'mimic2', 'adult', 'churn', 'credit', 'compas', 'support2',
+                                 'mimic3', 'rossmann', 'wine', 'bikeshare'],
+                        )
     parser.add_argument('--data_subsample', type=float, default=1.,
                         help='Between 0 and 1. Percentage of training data used. '
-                             'If bigger than 1, then select these '
-                             'number of samples.')
+                             'If bigger than 1, then select these number of samples.')
 
     args = parser.parse_args()
 
