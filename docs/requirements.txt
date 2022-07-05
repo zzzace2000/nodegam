@@ -3,3 +3,4 @@ nbsphinx
 ipykernel
 furo
 nodegam
+sphinxcontrib-gtagjs
