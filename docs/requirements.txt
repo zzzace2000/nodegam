@@ -2,3 +2,4 @@ sphinx
 nbsphinx
 ipykernel
 furo
+nodegam
