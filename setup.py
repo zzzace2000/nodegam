@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 from pathlib import Path
 
 name = "nodegam"
-version = "0.2.0"
+version = "0.2.1"
 
 this_directory = Path(__file__).parent
 long_description = (this_directory / "README.md").read_text()
