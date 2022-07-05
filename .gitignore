@@ -9,7 +9,6 @@ loss_figs/
 resources/pid_ref/
 run.sh
 test.py
-docs/source/notebooks
 
 # node and NPM
 npm-debug.log
