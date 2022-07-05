@@ -5,7 +5,6 @@ import bz2
 import gzip
 import os
 import shutil
-import warnings
 from os.path import join as pjoin, exists as pexists
 from zipfile import ZipFile
 
@@ -15,8 +14,6 @@ import requests
 from sklearn.datasets import load_svmlight_file
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-
-from .mypreprocessor import MyPreprocessor
 
 
 def download(url, filename, delete_if_interrupted=True, chunk_size=4096):
@@ -88,18 +85,19 @@ def download_file_from_google_drive(id, destination):
     save_response_content(response, destination)
 
 
-def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
-    """Download EPSILON dataset.
+def fetch_EPSILON(path='./data/', fold=0):
+    """Download EPSILON dataset from NODE paper.
 
     Args:
-        path: where the data should be stored. It downloads the folder called EPSILON here.
-        train_size, valid_size, test_size: you can specify how many data points. Type: int.
-        fold: which data fold to use. This is not used since only 1 fold is available.
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
 
     Returns:
-        A dictionary that contains:
-            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
-            'problem': either 'classification' or 'regression'.
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
     """
     path = pjoin(path, 'EPSILON')
 
@@ -127,30 +125,15 @@ def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=No
     y_test[y_test == -1] = 0
     print("Finish reading dataset.")
 
-    if all(sizes is None for sizes in (train_size, valid_size, test_size)):
-        train_idx_path = pjoin(path, 'stratified_train_idx.txt')
-        valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
-        if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/wxgm94gvm6d3xn5/stratified_train_idx.txt?dl=1",
-                     train_idx_path)
-            download("https://www.dropbox.com/s/fm4llo5uucdglti/stratified_valid_idx.txt?dl=1",
-                     valid_idx_path)
-        train_idx = pd.read_csv(train_idx_path, header=None)[0].values
-        valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
-    else:
-        assert train_size, "please provide either train_size or none of sizes"
-        if valid_size is None:
-            valid_size = len(X_train) - train_size
-            assert valid_size > 0
-        if train_size + valid_size > len(X_train):
-            warnings.warn('train_size + valid_size = {} exceeds dataset size: {}.'.format(
-                train_size + valid_size, len(X_train)), Warning)
-        if test_size is not None:
-            warnings.warn('Test set is fixed for this dataset.', Warning)
-
-        shuffled_indices = np.random.permutation(np.arange(len(X_train)))
-        train_idx = shuffled_indices[:train_size]
-        valid_idx = shuffled_indices[train_size: train_size + valid_size]
+    train_idx_path = pjoin(path, 'stratified_train_idx.txt')
+    valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
+    if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
+        download("https://www.dropbox.com/s/wxgm94gvm6d3xn5/stratified_train_idx.txt?dl=1",
+                 train_idx_path)
+        download("https://www.dropbox.com/s/fm4llo5uucdglti/stratified_valid_idx.txt?dl=1",
+                 valid_idx_path)
+    train_idx = pd.read_csv(train_idx_path, header=None)[0].values
+    valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
 
     X_train = pd.DataFrame(X_train)
     X_test = pd.DataFrame(X_test)
@@ -163,20 +146,19 @@ def fetch_EPSILON(path='./data/', train_size=None, valid_size=None, test_size=No
     )
 
 
-def fetch_PROTEIN(path='./data/', train_size=None, valid_size=None, test_size=None, fold=0):
-    """Download Protein dataset.
+def fetch_PROTEIN(path='./data/', fold=0):
+    """Download Protein dataset from NODE paper.
 
     See https://www.csie.ntu.edu.tw/~cjlin/libsvmtools/datasets/multiclass.html#protein.
 
     Args:
-        path: where the data should be stored. It downloads the folder called PROTEIN here.
-        train_size, valid_size, test_size: you can specify how many data points. Type: int.
-        fold: which data fold to use. This is not used since only 1 fold is available.
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
 
     Returns:
-        A dictionary that contains:
-            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
-            'problem': either 'classification' or 'regression'.
+        data (dict): It contains the following keys:
+            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': train/val/test data.
+            'problem': which problem type. Either 'classification' or 'regression'.
     """
     path = pjoin(path, 'PROTEIN')
 
@@ -196,28 +178,13 @@ def fetch_PROTEIN(path='./data/', train_size=None, valid_size=None, test_size=No
     X_train, X_test = X_train.toarray(), X_test.toarray()
     y_train, y_test = y_train.astype(np.int), y_test.astype(np.int)
 
-    if all(sizes is None for sizes in (train_size, valid_size, test_size)):
-        train_idx_path = pjoin(path, 'stratified_train_idx.txt')
-        valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
-        if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/wq2v9hl1wxfufs3/small_stratified_train_idx.txt?dl=1", train_idx_path)
-            download("https://www.dropbox.com/s/7o9el8pp1bvyy22/small_stratified_valid_idx.txt?dl=1", valid_idx_path)
-        train_idx = pd.read_csv(train_idx_path, header=None)[0].values
-        valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
-    else:
-        assert train_size, "please provide either train_size or none of sizes"
-        if valid_size is None:
-            valid_size = len(X_train) - train_size
-            assert valid_size > 0
-        if train_size + valid_size > len(X_train):
-            warnings.warn('train_size + valid_size = {} exceeds dataset size: {}.'.format(
-                train_size + valid_size, len(X_train)), Warning)
-        if test_size is not None:
-            warnings.warn('Test set is fixed for this dataset.', Warning)
-
-        shuffled_indices = np.random.permutation(np.arange(len(X_train)))
-        train_idx = shuffled_indices[:train_size]
-        valid_idx = shuffled_indices[train_size: train_size + valid_size]
+    train_idx_path = pjoin(path, 'stratified_train_idx.txt')
+    valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
+    if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
+        download("https://www.dropbox.com/s/wq2v9hl1wxfufs3/small_stratified_train_idx.txt?dl=1", train_idx_path)
+        download("https://www.dropbox.com/s/7o9el8pp1bvyy22/small_stratified_valid_idx.txt?dl=1", valid_idx_path)
+    train_idx = pd.read_csv(train_idx_path, header=None)[0].values
+    valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
 
     X_train = pd.DataFrame(X_train)
     X_test = pd.DataFrame(X_test)
@@ -229,18 +196,19 @@ def fetch_PROTEIN(path='./data/', train_size=None, valid_size=None, test_size=No
     )
 
 
-def fetch_YEAR(path='./data/', train_size=None, valid_size=None, test_size=51630, fold=0):
-    """Download YEAR dataset.
+def fetch_YEAR(path='./data/', test_size=51630, fold=0):
+    """Download YEAR dataset from NODE paper.
 
     Args:
-        path: where the data should be stored. It downloads the folder called YEAR here.
-        train_size, valid_size, test_size: you can specify how many data points. Type: int.
-        fold: which data fold to use. This is not used since only 1 fold is available.
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
 
     Returns:
-        A dictionary that contains:
-            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
-            'problem': either 'classification' or 'regression'.
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
     """
     path = pjoin(path, 'YEAR')
 
@@ -256,26 +224,13 @@ def fetch_YEAR(path='./data/', train_size=None, valid_size=None, test_size=51630
     X_train, y_train = data_train.iloc[:, 1:].values, data_train.iloc[:, 0].values
     X_test, y_test = data_test.iloc[:, 1:].values, data_test.iloc[:, 0].values
 
-    if all(sizes is None for sizes in (train_size, valid_size)):
-        train_idx_path = pjoin(path, 'stratified_train_idx.txt')
-        valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
-        if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/00u6cnj9mthvzj1/stratified_train_idx.txt?dl=1", train_idx_path)
-            download("https://www.dropbox.com/s/420uhjvjab1bt7k/stratified_valid_idx.txt?dl=1", valid_idx_path)
-        train_idx = pd.read_csv(train_idx_path, header=None)[0].values
-        valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
-    else:
-        assert train_size, "please provide either train_size or none of sizes"
-        if valid_size is None:
-            valid_size = len(X_train) - train_size
-            assert valid_size > 0
-        if train_size + valid_size > len(X_train):
-            warnings.warn('train_size + valid_size = {} exceeds dataset size: {}.'.format(
-                train_size + valid_size, len(X_train)), Warning)
-
-        shuffled_indices = np.random.permutation(np.arange(len(X_train)))
-        train_idx = shuffled_indices[:train_size]
-        valid_idx = shuffled_indices[train_size: train_size + valid_size]
+    train_idx_path = pjoin(path, 'stratified_train_idx.txt')
+    valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
+    if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
+        download("https://www.dropbox.com/s/00u6cnj9mthvzj1/stratified_train_idx.txt?dl=1", train_idx_path)
+        download("https://www.dropbox.com/s/420uhjvjab1bt7k/stratified_valid_idx.txt?dl=1", valid_idx_path)
+    train_idx = pd.read_csv(train_idx_path, header=None)[0].values
+    valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
 
     X_train = pd.DataFrame(X_train)
     X_test = pd.DataFrame(X_test)
@@ -287,18 +242,19 @@ def fetch_YEAR(path='./data/', train_size=None, valid_size=None, test_size=51630
     )
 
 
-def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 10 ** 5, fold=0):
-    """Download HIGGS dataset.
+def fetch_HIGGS(path='./data/', test_size=5 * 10 ** 5, fold=0):
+    """Download HIGGS dataset from NODE paper.
 
     Args:
-        path: where the data should be stored. It downloads the folder called YEAR here.
-        train_size, valid_size, test_size: you can specify how many data points. Type: int.
-        fold: which data fold to use. This is not used since only 1 fold is available.
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
 
     Returns:
-        A dictionary that contains:
-            'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test': pandas dataframe.
-            'problem': either 'classification' or 'regression'.
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
     """
     path = pjoin(path, 'HIGGS')
 
@@ -319,28 +275,15 @@ def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 
     X_train, y_train = data_train.iloc[:, 1:].values, data_train.iloc[:, 0].values
     X_test, y_test = data_test.iloc[:, 1:].values, data_test.iloc[:, 0].values
 
-    if all(sizes is None for sizes in (train_size, valid_size)):
-        train_idx_path = pjoin(path, 'stratified_train_idx.txt')
-        valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
-        if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
-            download("https://www.dropbox.com/s/i2uekmwqnp9r4ix/stratified_train_idx.txt?dl=1",
-                     train_idx_path)
-            download("https://www.dropbox.com/s/wkbk74orytmb2su/stratified_valid_idx.txt?dl=1",
-                     valid_idx_path)
-        train_idx = pd.read_csv(train_idx_path, header=None)[0].values
-        valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
-    else:
-        assert train_size, "please provide either train_size or none of sizes"
-        if valid_size is None:
-            valid_size = len(X_train) - train_size
-            assert valid_size > 0
-        if train_size + valid_size > len(X_train):
-            warnings.warn('train_size + valid_size = {} exceeds dataset size: {}.'.format(
-                train_size + valid_size, len(X_train)), Warning)
-
-        shuffled_indices = np.random.permutation(np.arange(len(X_train)))
-        train_idx = shuffled_indices[:train_size]
-        valid_idx = shuffled_indices[train_size: train_size + valid_size]
+    train_idx_path = pjoin(path, 'stratified_train_idx.txt')
+    valid_idx_path = pjoin(path, 'stratified_valid_idx.txt')
+    if not all(pexists(fname) for fname in (train_idx_path, valid_idx_path)):
+        download("https://www.dropbox.com/s/i2uekmwqnp9r4ix/stratified_train_idx.txt?dl=1",
+                 train_idx_path)
+        download("https://www.dropbox.com/s/wkbk74orytmb2su/stratified_valid_idx.txt?dl=1",
+                 valid_idx_path)
+    train_idx = pd.read_csv(train_idx_path, header=None)[0].values
+    valid_idx = pd.read_csv(valid_idx_path, header=None)[0].values
 
     X_train = pd.DataFrame(X_train)
     X_test = pd.DataFrame(X_test)
@@ -353,7 +296,19 @@ def fetch_HIGGS(path='./data/', train_size=None, valid_size=None, test_size=5 * 
 
 
 def fetch_MICROSOFT(path='./data/', fold=0):
-    """Download MICROSOFT dataset."""
+    """Download MICROSOFT dataset from NODE paper.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+    """
     path = pjoin(path, 'MICROSOFT')
 
     train_path = pjoin(path, 'msrank_train.tsv')
@@ -392,7 +347,19 @@ def fetch_MICROSOFT(path='./data/', fold=0):
 
 
 def fetch_YAHOO(path='./data/', fold=0):
-    """Download YAHOO dataset."""
+    """Download YAHOO dataset from the NODE paper.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+    """
     path = pjoin(path, 'YAHOO')
 
     train_path = pjoin(path, 'yahoo_train.tsv')
@@ -435,7 +402,23 @@ def fetch_YAHOO(path='./data/', fold=0):
 
 
 def fetch_CLICK(path='./data/', valid_size=100_000, validation_seed=None, fold=0):
-    """Download CLICK from https://www.kaggle.com/slamnz/primer-airlines-delay."""
+    """Download CLICK dataset from https://www.kaggle.com/slamnz/primer-airlines-delay.
+
+    Args:
+        path: Where the data should be stored.
+        valid_size: Validation size. Default to 100K.
+        validation_seed: The seed. Default to None.
+        fold: Which data fold to use. This is not used since only 1 fold is available.
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+    """
 
     path = pjoin(path, 'CLICK')
 
@@ -471,18 +454,19 @@ def fetch_MIMIC2(path='./data/', fold=0):
     """Download MIMIC2 dataset.
 
     Args:
-        path: where the data should be stored. It downloads the folder called YEAR here.
-        fold: which data fold to use. Choose from [0, 1, 2, 3, 4].
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
 
     Returns:
-        A dictionary that contains:
-            'X_train', 'y_train', 'X_test', 'y_test': pandas dataframe.
-            'problem': either 'classification' or 'regression'.
-            'cat_features': which features are categorical.
-            'metric': the optimized metric on this dataset.
-            'quantile_noise': the noise magnitude. The noise should be small enough to get good
-                normal dist, but big enough to seperate the categorical features after quantile
-                transform.
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset.
     """
 
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
@@ -525,11 +509,27 @@ def fetch_MIMIC2(path='./data/', fold=0):
         problem='classification',
         cat_features=cat_features,
         metric='negative_auc',
-        quantile_noise=1e-6,
     )
 
 
 def fetch_ADULT(path='./data/', fold=0):
+    """Download Adult Income dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'adult', 'adult.data')
@@ -571,11 +571,27 @@ def fetch_ADULT(path='./data/', fold=0):
         problem='classification',
         cat_features=cat_features,
         metric='negative_auc',
-        quantile_noise=1e-3,
     )
 
 
 def fetch_COMPAS(path='./data/', fold=0):
+    """Download COMPAS dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'recid', 'recid.csv')
@@ -607,11 +623,27 @@ def fetch_COMPAS(path='./data/', fold=0):
         problem='classification',
         cat_features=cat_features,
         metric='negative_auc',
-        quantile_noise=1e-5,
     )
 
 
 def fetch_CHURN(path='./data/', fold=0):
+    """Download CHURN dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'churn', 'WA_Fn-UseC_-Telco-Customer-Churn.csv')
@@ -650,11 +682,27 @@ def fetch_CHURN(path='./data/', fold=0):
         problem='classification',
         cat_features=cat_features,
         metric='negative_auc',
-        quantile_noise=1e-6,
     )
 
 
 def fetch_CREDIT(path='./data/', fold=0):
+    """Download Credit dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'credit', 'creditcard.csv')
@@ -685,11 +733,27 @@ def fetch_CREDIT(path='./data/', fold=0):
         X_test=X_df.iloc[test_idx], y_test=y_df[test_idx],
         problem='classification',
         metric='negative_auc',
-        quantile_noise=1e-5,
     )
 
 
 def fetch_SUPPORT2(path='./data/', fold=0):
+    """Download Support2 dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' \
                                  % fold
     data_path = pjoin(path, 'support2', 'support2.csv')
@@ -733,11 +797,27 @@ def fetch_SUPPORT2(path='./data/', fold=0):
         cat_features=cat_cols,
         problem='classification',
         metric='negative_auc',
-        quantile_noise=1e-4,
     )
 
 
 def fetch_MIMIC3(path='./data/', fold=0):
+    """Download MIMIC3 dataset.
+
+    It aggregates the values within first 24-hour window and predict the mortality.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'metric':
+                The optimized metric on this dataset. Set to auc.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' % fold
     data_path = pjoin(path, 'mimic3', 'adult_icu.gz')
     if not pexists(data_path):
@@ -779,11 +859,23 @@ def fetch_MIMIC3(path='./data/', fold=0):
         X_test=X_df.iloc[test_idx], y_test=y_df[test_idx],
         problem='classification',
         metric='negative_auc',
-        quantile_noise=1e-7,
     )
 
 
 def fetch_WINE(path='./data/', fold=0):
+    """Download Wine dataset from Kaggle.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' % fold
 
     data_path = pjoin(path, 'wine', 'winequality-white.csv')
@@ -809,11 +901,23 @@ def fetch_WINE(path='./data/', fold=0):
         X_train=X_df.iloc[train_idx], y_train=y_df[train_idx],
         X_test=X_df.iloc[test_idx], y_test=y_df[test_idx],
         problem='regression',
-        quantile_noise=1e-8,
     )
 
 
 def fetch_BIKESHARE(path='./data/', fold=0):
+    """Download Bikeshare dataset from Kaggle.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Which data fold to use. Choose from [0, 1, 2, 3, 4].
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' % fold
 
     data_path = pjoin(path, 'bikeshare', 'hour.csv')
@@ -842,11 +946,25 @@ def fetch_BIKESHARE(path='./data/', fold=0):
         X_train=X_df.iloc[train_idx], y_train=y_df[train_idx],
         X_test=X_df.iloc[test_idx], y_test=y_df[test_idx],
         problem='regression',
-        quantile_noise=1e-6,
     )
 
 
 def fetch_ROSSMANN(path='./data/', fold=0):
+    """Download Rossman dataset.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Not used.
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+    """
     train_path = pjoin(path, 'rossmann-store-sales-preprocessed', 'train')
     if not pexists(train_path):
         os.makedirs(pjoin(path, 'rossmann-store-sales-preprocessed'), exist_ok=True)
@@ -879,11 +997,26 @@ def fetch_ROSSMANN(path='./data/', fold=0):
         X_test=X_test, y_test=y_test,
         problem='regression',
         cat_features=cat_features,
-        quantile_noise=1e-4,
     )
 
 
 def fetch_SARCOS(path='./data/', fold=0, target_id=None):
+    """Download Sarcos dataset for multi-task learning.
+
+    Args:
+        path: Where the data should be stored.
+        fold: Data fold.
+        target_id: which task to return. If None, y contains all tasks. Set between 0 to 6.
+
+    Returns:
+        data (dict): It contains the following keys::
+            - 'X_train', 'y_train', 'X_valid', 'y_valid', 'X_test', 'y_test':
+                Train/val/test sets. X is apandas dataframe and y is a numpy array.
+            - 'problem':
+                Which problem type. Either 'classification' or 'regression'.
+            - 'cat_features':
+                Which features are categorical.
+    """
     assert 0 <= fold <= 4, 'fold is only allowed btw 0 and 4, but get %d' % fold
 
     data_path = pjoin(path, 'sarcos', 'sarcos_inv.mat')

@@ -11,6 +11,7 @@ eps = np.finfo(np.float32).eps
 class MyCommonBase(object):
     @property
     def is_GAM(self):
+        """Returns True if it's a GAM."""
         return True
 
     @property
@@ -31,7 +32,7 @@ class MyExtractLogOddsMixin(MyCommonBase):
         2) predict_proba(): this is for binary classification.
     """
 
-    def extract_log_odds(self, log_odds):
+    def _extract_log_odds(self, log_odds):
         split_lens = [len(log_odds[f_name]['x_val']) for f_name in self.feature_names]
         cum_lens = np.cumsum(split_lens)
 
@@ -64,6 +65,19 @@ class MyExtractLogOddsMixin(MyCommonBase):
             log_odds[feature_name]['y_val'] = ys[f_idx]
 
     def get_GAM_df(self, x_values_lookup=None, center=True):
+        """Get the GAM dataframe.
+
+        Args:
+            x_values_lookup (dict): the unique values of X for each feature. If passed, the outputs
+                of the GAM model w.r.t. these x values are extracted. Useful to get a coarser graph
+                when there are too many unique values in a feature.
+            center (bool): if True, it centers each GAM graph to 0 by moving its mean to the
+                intercept term.
+
+        Returns:
+            df (pandas dataframe): a GAM dataframe where each row represents a GAM term with the
+                inputs x, outputs y, and feature importance.
+        """
         assert self.is_GAM, 'Only supports when the model is a GAM'
 
         # Use the X_values_counts to produce the Xs
@@ -81,7 +95,7 @@ class MyExtractLogOddsMixin(MyCommonBase):
                 'y_val': np.zeros(len(all_xs)),
             }
 
-        self.extract_log_odds(log_odds)
+        self._extract_log_odds(log_odds)
 
         # Centering and importances
         for feat_idx, feat_name in enumerate(self.feature_names):

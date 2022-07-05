@@ -1,8 +1,9 @@
 """This file implements a higher-level NodeGAM model that can just call fit(X, y).
 
-The goal is to provide a simple interface for users who just want to use it like:
->>> model = NodeGAM()
->>> model.fit(X, y)
+The goal is to provide a simple interface for users who just want to use it like::
+
+    >>> model = NodeGAM()
+    >>> model.fit(X, y)
 """
 import os
 import shutil
@@ -107,12 +108,12 @@ class NodeGAMBase(object):
 
         self.preprocessor = None
 
-    def fit(self, X, y):
+    def fit(self, X: pd.DataFrame, y: np.ndarray):
         """Train the model.
 
         Args:
-            X: input features. Type: pandas dataframe.
-            y: targets. Type: numpy array of int.
+            X (pandas dataframe): input features.
+            y (numpy array): targets.
 
         Returns:
             train_losses: the training losses of each optimization step.
@@ -262,7 +263,7 @@ class NodeGAMBase(object):
         return dict(train_losses=train_losses, val_metrics=val_metrics,
                     total_train_time=total_train_time)
 
-    def get_GAM_df(self, all_X, max_n_bins=256):
+    def get_GAM_df(self, all_X: pd.DataFrame, max_n_bins: int = 256):
         """Extract the GAM dataframe from the model.
 
         Args:
@@ -283,7 +284,7 @@ class NodeGAMBase(object):
                                                batch_size=2 * self.batch_size)
         return df
 
-    def visualize(self, X, max_n_bins=256, show_density=False):
+    def visualize(self, X: pd.DataFrame, max_n_bins: int = 256, show_density: bool = False):
         """Visualize the GAM graph.
 
         Args:
@@ -309,8 +310,6 @@ class NodeGAMBase(object):
 
 
 class NodeGAMClassifier(NodeGAMBase):
-    """A NodeGAM Classfier that follows sklearn interface to train."""
-
     def __init__(
         self,
         # Dataset-related
@@ -318,7 +317,7 @@ class NodeGAMClassifier(NodeGAMBase):
         cat_features=None,
         validation_size=0.15,
         quantile_dist='normal',
-        quantile_noise=0.01,
+        quantile_noise=1e-3,
         # General
         name=None,
         seed=1377,
@@ -349,15 +348,15 @@ class NodeGAMClassifier(NodeGAMBase):
         objective='logloss',
         verbose=1,
     ):
-        """NodeGAM Base.
+        """A NodeGAM Classfier that follows sklearn interface to train.
 
         Args:
-            in_features: number of input features. Type: int.
+            in_features (int): number of input features.
             cat_features: the name of categorical features that match the columns of X.
             validation_size: validation size.
             quantile_dist: choose between ['normal', 'uniform']. Data is projected onto this
                 distribution. See the flag 'output_dist' of sklearn QuantileTransformer.
-            quantile_noise=0.01: fits QuantileTransformer on data with added gaussian noise with
+            quantile_noise: fits QuantileTransformer on data with added gaussian noise with
                 std = :quantile_noise: * data.std; this will cause discrete values to be
                 more separable. Please note that this transformation does NOT apply gaussian noise
                 to the resulting data, the noise is only applied for QuantileTransformer.fit().
@@ -434,29 +433,30 @@ class NodeGAMClassifier(NodeGAMBase):
             verbose=verbose,
         )
 
-    def predict_proba(self, X):
+    def predict_proba(self, X: pd.DataFrame):
         """Predict probability.
 
         Args:
             X: pandas dataframe.
 
         Returns:
-            prob: probability in binary classfication. Type: numpy.
+            prob (numpy array): the probability of 2 classes with shape [N, 2].
         """
         assert isinstance(X, pd.DataFrame), 'Has to be a dataframe.'
 
         logits = self.predict(X)
         prob = sigmoid_np(logits)
-        return prob
+        # Back to sklearn format
+        return np.vstack([1. - prob, prob]).T
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame):
         """Predict logits.
 
         Args:
-            X: pandas dataframe.
+            X (pandas dataframe): Input.
 
         Returns:
-            logits: logits in binary classfication. Type: numpy.
+            logits (numpy array): logits in binary classfication.
         """
         assert isinstance(X, pd.DataFrame), 'Has to be a dataframe.'
 
@@ -471,8 +471,6 @@ class NodeGAMClassifier(NodeGAMBase):
 
 
 class NodeGAMRegressor(NodeGAMBase):
-    """A NodeGAM Regressor that follows sklearn interface to train."""
-
     def __init__(
         self,
         # Dataset-related
@@ -480,7 +478,7 @@ class NodeGAMRegressor(NodeGAMBase):
         cat_features=None,
         validation_size=0.15,
         quantile_dist='normal',
-        quantile_noise=0.01,
+        quantile_noise=1e-3,
         # General
         name=None,
         seed=1377,
@@ -511,15 +509,15 @@ class NodeGAMRegressor(NodeGAMBase):
         objective='mse',
         verbose=1,
     ):
-        """NodeGAM Regressor.
+        """A NodeGAM Regressor that follows sklearn interface to train.
 
         Args:
-            in_features: number of input features. Type: int.
+            in_features (int): number of input features.
             cat_features: the name of categorical features that match the columns of X.
             validation_size: validation size.
             quantile_dist: choose between ['normal', 'uniform']. Data is projected onto this
                 distribution. See the flag 'output_dist' of sklearn QuantileTransformer.
-            quantile_noise=0.01: fits QuantileTransformer on data with added gaussian noise with
+            quantile_noise: fits QuantileTransformer on data with added gaussian noise with
                 std = :quantile_noise: * data.std; this will cause discrete values to be
                 more separable. Please note that this transformation does NOT apply gaussian noise
                 to the resulting data, the noise is only applied for QuantileTransformer.fit().
@@ -596,7 +594,7 @@ class NodeGAMRegressor(NodeGAMBase):
             verbose=verbose,
         )
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame):
         """Predict regression.
 
         Args:

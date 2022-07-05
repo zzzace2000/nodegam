@@ -1,4 +1,4 @@
-"""Copied from https://github.com/zzzace2000/GAMs_models/.
+"""Adapted from https://github.com/zzzace2000/GAMs_models/.
 
 It implements the bagging of GAM models. Unlike sklearn implmementation of BaggingClassifier, it
 averages the logits instead of the probability to make sure the bagging of GAMs is still a GAM. It
@@ -118,7 +118,6 @@ class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
                  n_jobs=None,
                  random_state=None,
                  verbose=0):
-
         super().__init__(
             base_estimator,
             n_estimators=n_estimators,
@@ -131,8 +130,8 @@ class MyBaggingClassifierBase(MyBaggingMixin, BaggingClassifier):
             n_jobs=n_jobs,
             random_state=random_state,
             verbose=verbose)
-        
-        # Tell the encoding no need to do reversion in get_GAM_plot_df() 
+
+        # Tell the encoding no need to do reversion in get_GAM_df()
         self.not_revert = True
 
     def predict_proba(self, X, parallel=False):
@@ -209,6 +208,36 @@ class MyBaggingLabelEncodingClassifier(LabelEncodingClassifierMixin, MyBaggingCl
 
 
 class MyBaggingClassifier(OnehotEncodingClassifierMixin, MyBaggingClassifierBase, MyCommonBase):
+    """The bagging for the base estimator GAM.
+
+    It overwrites the sklearn.ensemble.BaggingClassifier to (1) do ensemble on the logits and NOT
+         the probabilities to make it still as a GAM, and (2) support GAM df extraction.
+
+    Args:
+        base_estimator: the base estimator model.
+        n_estimators: how many number of estimators to do bagging.
+        max_samples (int or float) = 1.0: the number of samples to draw from X to train each base
+            estimator (with replacement by default, see `bootstrap` for more details).
+            - If int, then draw `max_features` features.
+            - If float, then draw `max_features * X.shape[1]` features.
+        max_features (int or float) = 1.0: The number of features to draw from X to train each base
+            estimator (without replacement by default, see `bootstrap_features` for more details).
+            - If int, then draw `max_features` features.
+            - If float, then draw `max_features * X.shape[1]` features.
+        bootstrap (bool) = True: Whether samples are drawn with replacement. If False, sampling
+            without replacement is performed.
+        bootstrap_features (bool) = False: Whether features are drawn with replacement.
+        oob_score (bool) = False: Whether to use out-of-bag samples to estimate
+            the generalization error. Only available if bootstrap=True.
+        warm_start (bool) = False: When set to True, reuse the solution of the previous call to fit
+            and add more estimators to the ensemble, otherwise, just fit
+            a whole new ensemble.
+        n_jobs (int) = None: The number of jobs to run in parallel for both :meth:`fit` and
+            :meth:`predict`. ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
+            ``-1`` means using all processors.
+        random_state: random state.
+        verbose: verbose.
+    """
     pass
 
 
@@ -246,4 +275,33 @@ class MyBaggingLabelEncodingRegressor(LabelEncodingRegressorMixin, MyBaggingRegr
     pass
 
 class MyBaggingRegressor(OnehotEncodingRegressorMixin, MyBaggingRegressorBase, MyCommonBase):
+    """The bagging for the base estimator GAM regressor.
+
+    It overwrites the sklearn.ensemble.BaggingRegressor to support GAM df extraction.
+
+    Args:
+        base_estimator: the base estimator model.
+        n_estimators: how many number of estimators to do bagging.
+        max_samples (int or float) = 1.0: the number of samples to draw from X to train each base
+            estimator (with replacement by default, see `bootstrap` for more details).
+            - If int, then draw `max_features` features.
+            - If float, then draw `max_features * X.shape[1]` features.
+        max_features (int or float) = 1.0: The number of features to draw from X to train each base
+            estimator (without replacement by default, see `bootstrap_features` for more details).
+            - If int, then draw `max_features` features.
+            - If float, then draw `max_features * X.shape[1]` features.
+        bootstrap (bool) = True: Whether samples are drawn with replacement. If False, sampling
+            without replacement is performed.
+        bootstrap_features (bool) = False: Whether features are drawn with replacement.
+        oob_score (bool) = False: Whether to use out-of-bag samples to estimate
+            the generalization error. Only available if bootstrap=True.
+        warm_start (bool) = False: When set to True, reuse the solution of the previous call to fit
+            and add more estimators to the ensemble, otherwise, just fit
+            a whole new ensemble.
+        n_jobs (int) = None: The number of jobs to run in parallel for both :meth:`fit` and
+            :meth:`predict`. ``None`` means 1 unless in a :obj:`joblib.parallel_backend` context.
+            ``-1`` means using all processors.
+        random_state: random state.
+        verbose: verbose.
+    """
     pass

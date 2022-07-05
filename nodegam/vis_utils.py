@@ -39,8 +39,8 @@ def vis_GAM_effects(
             dataframe of each model.
         num_cols: number of columns when showing GAM graphs.
         figsize: the figure size. If not specified, it uses the
-            (width, height) = (4 * num_cols + (num_cols-1) * horizontal_margin,
-                               3 * num_rows + vertical_margin * (num_rows - 1)).
+                (width, height) = (4 * num_cols + (num_cols-1) * horizontal_margin,
+                                   3 * num_rows + vertical_margin * (num_rows - 1)).
         vertical_margin: the vertical margin. Default: 2.
         horizontal_margin: the horizontal margin. Default: 2.
         sort_by_imp: if True, sort the figures by the feature importances. Otherwise use the feature
@@ -60,7 +60,7 @@ def vis_GAM_effects(
 
     Returns:
         fig: the figure.
-        axes: all the axes. A numpy array.
+        axes (numpy array): all the axes.
     """
     if model_names is None:
         model_names = list(all_dfs.keys())
@@ -266,8 +266,8 @@ def cal_statistics(table, is_metric_higher_better=True, add_ns_baseline=False):
         add_ns_baseline: if True, add an normalized score to the statistics.
 
     Returns:
-        A pandas table with two summary row as (1) average value, and (2) the average ranks.
-        It also highlights the best number as red and the worst method as green.
+        A pandas table with two summary row as (1) average value, and (2) the average ranks. It
+            also highlights the best number as red and the worst method as green.
     """
     # Add two rows
     mean_score = table.apply(lambda x: x.apply(

@@ -13,7 +13,7 @@ from .utils import sigmoid
 
 class MySplineMixin(MyExtractLogOddsMixin):
     def __init__(self, model_cls, search=True, search_lam=None, max_iter=500,
-        n_splines=50, fit_binary_feat_as_factor_term=False, **kwargs):
+        n_splines=50, fit_binary_feat_as_factor_term=False, cat_features=None, **kwargs):
         super().__init__()
 
         self.model_cls = model_cls
@@ -22,6 +22,7 @@ class MySplineMixin(MyExtractLogOddsMixin):
         self.max_iter = max_iter
         self.n_splines = n_splines
         self.fit_binary_feat_as_factor_term = fit_binary_feat_as_factor_term
+        self.cat_features = cat_features
         self.kwargs = kwargs
 
         if self.search_lam is None:
@@ -80,10 +81,11 @@ class MySplineMixin(MyExtractLogOddsMixin):
         return self
 
     def get_lam(self):
-        # Now only do 1-number search for lam
+        """Return the lambda penalty."""
         return self.model.lam[0][0]
 
     def get_params(self, *args, **kwargs):
+        """Return the parameters."""
         return dict(
             search=self.search,
             search_lam=self.search_lam,
@@ -113,6 +115,14 @@ class MySplineLogisticGAMBase(MyFitMixin, MySplineMixin):
         return logit
 
     def predict_proba(self, X):
+        """Predict Probability.
+
+        Args:
+            X (pandas dataframe): inputs.
+
+        Returns:
+            prob (numpy array): the probability of both classes with shape [N, 2].
+        """
         logit = self._my_predict_logodds(X)
         # Use stable sigmoid instead of the unstable packages
         prob = sigmoid(logit)
@@ -122,6 +132,16 @@ class MySplineLogisticGAMBase(MyFitMixin, MySplineMixin):
 
 
 class MySplineLogisticGAM(OnehotEncodingClassifierMixin, MySplineLogisticGAMBase):
+    """Logistic Spline for binary classification with one-hot encoding for cat features.
+
+    Args:
+        search (bool): if True, it searches the best lam penalty for the model.
+        search_lam (list or numpy array): the range of lam penalty to search. If None, it is
+            set to np.linspace(-3, 3, 15).
+        max_iter (int): maximum interations to train.
+        n_splines (int): number of splines. Default: 50.
+        cat_features (list): the column names of the categorical features. Default: None.
+    """
     pass
 
 
@@ -130,10 +150,28 @@ class MySplineGAMBase(MyFitMixin, MySplineMixin):
         super().__init__(model_cls=LinearGAM, **kwargs)
 
     def predict(self, X):
+        """Predict regression target.
+
+        Args:
+            X (pandas dataframe): inputs.
+
+        Returns:
+            prob (numpy array): the prediction of shape [N].
+        """
         if isinstance(X, pd.DataFrame):
             X = X.values
         return self.model.predict(X)
 
 
 class MySplineGAM(OnehotEncodingRegressorMixin, MySplineGAMBase):
+    """Spline for Regression with one-hot encoding for cat features.
+
+    Args:
+        search (bool): if True, it searches the best lam penalty for the model.
+        search_lam (list or numpy array): the range of lam penalty to search. If None, it is
+            set to np.linspace(-3, 3, 15).
+        max_iter (int): maximum interations to train.
+        n_splines (int): number of splines. Default: 50.
+        cat_features (list): the column names of the categorical features. Default: None.
+    """
     pass

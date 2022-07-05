@@ -87,10 +87,30 @@ class MyXGBRegressor(MyGAMPlotMixinBase, MyXGBMixin):
 
 
 class MyXGBOnehotClassifier(OnehotEncodingClassifierMixin, MyXGBClassifier):
-    pass
+    """XGB-GAM Classifier with one-hot encoding for categorical features.
+
+    Args:
+        max_depth=1: The tree depth of the package. Should be set to 1 to remain as a GAM.
+        random_state=1377: Seed.
+        n_estimators=5000: Maximum number of rounds to fit.
+        n_jobs=-1: Set to -1 to use multi-thread parallel training.
+        validation_size=0.15: The validation porportion.
+        early_stopping_rounds=50: Early stopping rounds.
+        objective='binary\:logistic': The validation objective.
+    """
 
 class MyXGBOnehotRegressor(OnehotEncodingRegressorMixin, MyXGBRegressor):
-    pass
+    """XGB-GAM Regressor with one-hot encoding for categorical features.
+
+    Args:
+        max_depth=1: The tree depth of the package. Should be set to 1 to remain as a GAM.
+        random_state=1377: Seed.
+        n_estimators=5000: Maximum number of rounds to fit.
+        n_jobs=-1: Set to -1 to use multi-thread parallel training.
+        validation_size=0.15: The validation porportion.
+        early_stopping_rounds=50: Early stopping rounds.
+        objective='reg\:squarederror': The validation objective.
+    """
 
 class MyXGBLabelEncodingClassifier(LabelEncodingClassifierMixin, MyXGBClassifier):
     pass

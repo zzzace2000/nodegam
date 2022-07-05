@@ -16,11 +16,11 @@ def to_one_hot(y, depth=None):
     The n+1'st dimension will have zeros everywhere but at y'th index, where it will be equal to 1.
 
     Args:
-        y: input integer (IntTensor, LongTensor or Variable) of any shape.
-        depth (int):  the size of the one hot dimension.
+        y: Input integer (IntTensor, LongTensor or Variable) of any shape.
+        depth (int): The size of the one hot dimension.
 
     Returns:
-        y_onehot: the onehot encoding of y.
+        y_onehot: The onehot encoding of y.
     """
     y_flat = y.to(torch.int64).view(-1, 1)
     depth = depth if depth is not None else int(torch.max(y_flat)) + 1
@@ -50,12 +50,12 @@ class SparsemaxFunction(Function):
     def forward(ctx, input, dim=-1):
         """sparsemax: normalizing sparse transform (a la softmax)
 
-        Parameters:
-            input (Tensor): any shape
-            dim: dimension along which to apply sparsemax
+        Args:
+            input: Any dimension.
+            dim: Dimension along which to apply.
 
         Returns:
-            output (Tensor): same shape as input
+            output (Tensor): Same shape as input.
         """
         ctx.dim = dim
         max_val, _ = input.max(dim=dim, keepdim=True)
@@ -80,14 +80,14 @@ class SparsemaxFunction(Function):
 
     @staticmethod
     def _threshold_and_support(input, dim=-1):
-        """Sparsemax building block: compute the threshold
+        """Sparsemax building block: compute the threshold.
 
         Args:
-            input: any dimension
-            dim: dimension along which to apply the sparsemax
+            input: Any dimension.
+            dim: Dimension along which to apply the sparsemax.
 
         Returns:
-            the threshold value
+            The threshold value.
         """
 
         input_srt, _ = torch.sort(input, descending=True, dim=dim)
@@ -158,7 +158,7 @@ class Entmax15Function(Function):
 
 
 class Entmoid15(Function):
-    """A highly optimized equivalent of labda x: Entmax15([x, 0])."""
+    """A highly optimized equivalent of lambda x: Entmax15([x, 0])."""
 
     @staticmethod
     def forward(ctx, input):
@@ -197,7 +197,8 @@ def my_one_hot(val, dim=-1):
     """Make one hot encoding along certain dimension and not just the last dimension.
 
     Args:
-        val: a pytorch tensor.
+        val: A pytorch tensor.
+        dim: The dimension.
     """
     max_cls = torch.argmax(val, dim=dim)
     onehot = F.one_hot(max_cls, num_classes=val.shape[dim])
@@ -218,10 +219,10 @@ class _Temp(nn.Module):
         """Annealing temperature from max to min in log10 space.
 
         Args:
-            steps: the number of steps to change from max_temp to the min_temp in log10 space.
-            max_temp: the max (initial) temperature.
-            min_temp: the min (final) temperature.
-            sample_soft: if False, the model does a hard operation after the specified steps.
+            steps: The number of steps to change from max_temp to the min_temp in log10 space.
+            max_temp: The max (initial) temperature.
+            min_temp: The min (final) temperature.
+            sample_soft: If False, the model does a hard operation after the specified steps.
         """
         super().__init__()
         self.steps = steps

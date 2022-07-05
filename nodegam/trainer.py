@@ -32,7 +32,7 @@ class Trainer(nn.Module):
 		"""Trainer.
 
 		Args:
-			model: the model. Type: torch.nn.Module.
+			model (torch.nn.Module): the model.
 			experiment_name: a path where all logs and checkpoints are saved.
 			warm_start: when set to True, loads the last checkpoint.
 			Optimizer: function(parameters) -> optimizer. Default: torch.optim.Adam.

@@ -13,18 +13,18 @@ class MyPreprocessor:
         """Preprocessor does the data preprocessing like input and target normalization.
 
         Args:
-            random_state: global random seed for an experiment.
-            cat_features: if passed in, it does the ordinal encoding for these features before other
+            random_state: Global random seed for an experiment.
+            cat_features: If passed in, it does the ordinal encoding for these features before other
                 input normalization like quantile transformation. Default: None.
             normalize: standardize features by removing the mean and scaling to unit variance.
-            y_normalize: if True, it standardizes the targets y by setting the mean and stdev to 0
+            y_normalize: If True, it standardizes the targets y by setting the mean and stdev to 0
                 and 1. Useful in the regression setting.
-            quantile_transform: if True, transforms the features to follow a normal or uniform
+            quantile_transform: If True, transforms the features to follow a normal or uniform
                 distribution.
-            output_distribution: choose between ['normal', 'uniform']. Data is projected onto this
+            output_distribution: Choose between ['normal', 'uniform']. Data is projected onto this
                 distribution. See the same param of sklearn QuantileTransformer. 'normal' is better.
-            n_quantiles: number of quantiles to estimate the distribution. Default: 2000.
-            quantile_noise: if specified, fits QuantileTransformer on data with added gaussian noise
+            n_quantiles: Number of quantiles to estimate the distribution. Default: 2000.
+            quantile_noise: If specified, fits QuantileTransformer on data with added gaussian noise
                 with std = :quantile_noise: * data.std; this will cause discrete values to be more
                 separable. Please note that this transformation does NOT apply gaussian noise to the
                 resulting data, the noise is only applied for QuantileTransformer.
@@ -53,6 +53,13 @@ class MyPreprocessor:
         self.feature_names = None
 
     def fit(self, X, y=None):
+        """Fit the transformer.
+
+        Args:
+            X (pandas daraframe): Input data.
+            y (numpy array): Optional. If passed in, it will record the y_mean and y_std if
+                'y_normalize' is set to True.
+        """
         assert isinstance(X, pd.DataFrame), 'X is not a dataframe! %s' % type(X)
         self.feature_names = X.columns
 
@@ -89,6 +96,16 @@ class MyPreprocessor:
             print("Normalize y. mean = {}, std = {}".format(self.y_mu, self.y_std))
 
     def transform(self, *args):
+        """Transform the data.
+
+        Args:
+            X (pandas daraframe): Input data.
+            y (numpy array): Optional. If passed in, it will do target normalization.
+
+        Returns:
+            X (pandas daraframe): Normalized Input data.
+            y (numpy array): Optional. Normalized y.
+        """
         assert len(args) <= 2
 
         X = args[0]
@@ -121,10 +138,8 @@ class MyPreprocessor:
 
 
 class MyOrdinalEncoder:
-    """My ordinal encoding that imputes the unseen category as the most frequent one."""
-
     def __init__(self, cat_features=None):
-        """Do a ordinal encoding.
+        """My ordinal encoding that imputes the unseen category as the most frequent one.
 
         Args:
             cat_features: a list of column names to do ordinal encoding. If None, transform all.
@@ -147,10 +162,10 @@ class MyOrdinalEncoder:
         """Transforms columns of X specified in self.columns.
 
         Args:
-          X: features. Type: pandas datafranme.
+            X (pandas datafranme): Input features.
 
         Returns:
-          output: the transformed X
+            output (pandas dataframe): Transformed X.
         """
         output = X.copy()
         for col in self.cat_features:

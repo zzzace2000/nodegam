@@ -7,6 +7,5 @@ from . import recorder
 from . import arch
 from . import gams
 from . import mypreprocessor
+from . import vis_utils
 
-
-__version__ = '0.2.0'

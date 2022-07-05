@@ -23,41 +23,41 @@ class ODST(ModuleWithInit):
         One can drop (sic!) this module anywhere instead of nn.Linear
 
         Args:
-            in_features: number of features in the input tensor.
-            num_trees: number of trees in this layer.
-            tree_dim: number of response channels in the response of individual tree.
-            depth: number of splits in every tree.
-            flatten_output: if False, returns [..., num_trees, tree_dim], by default returns
+            in_features: Number of features in the input tensor.
+            num_trees: Number of trees in this layer.
+            tree_dim: Number of response channels in the response of individual tree.
+            depth: Number of splits in every tree.
+            flatten_output: If False, returns [..., num_trees, tree_dim], by default returns
                 [..., num_trees * tree_dim].
             choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
                 f(tensor, dim).sum(dim) == 1.
             bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
-            initialize_response_: in-place initializer for tree output tensor.
-            initialize_selection_logits_: in-place initializer for logits that select features for
+            initialize_response_: In-place initializer for tree output tensor.
+            initialize_selection_logits_: In-place initializer for logits that select features for
                 the tree. Both thresholds and scales are initialized with data-aware init
                 (or .load_state_dict).
-            threshold_init_beta: initializes threshold to a q-th quantile of data points where
+            threshold_init_beta: Initializes threshold to a q-th quantile of data points where
                 q ~ Beta(:threshold_init_beta:, :threshold_init_beta:). If this param is set to 1,
                 initial thresholds will have the same distribution as data points. If greater than 1
                 (e.g. 10), thresholds will be closer to median data value. If less than 1
                 (e.g. 0.1), thresholds will approach min/max data values.
-            threshold_init_cutoff: threshold log-temperatures initializer, \in (0, inf)
+            threshold_init_cutoff: Threshold log-temperatures initializer, \in (0, inf)
                 By default(1.0), log-remperatures are initialized in such a way that all bin
                 selectors end up in the linear region of sparse-sigmoid. The temperatures are then
-                scaled by this parameter.
-                - Setting this value > 1.0 will result in some margin between data points and
-                    sparse-sigmoid cutoff value.
-                - Setting this value < 1.0 will cause (1 - value) part of data points to end up in
-                    flat sparse-sigmoid region. For instance, threshold_init_cutoff = 0.9 will set
-                    10% points equal to 0.0 or 1.0.
-                - Setting this value > 1.0 will result in a margin between data points and
-                    sparse-sigmoid cutoff value. All points will be between
-                    (0.5 - 0.5 / threshold_init_cutoff) and (0.5 + 0.5 / threshold_init_cutoff).
-            colsample_bytree: the random proportion of features allowed in each tree. The same
+                scaled by this parameter::
+                    - Setting this value > 1.0 will result in some margin between data points and
+                        sparse-sigmoid cutoff value.
+                    - Setting this value < 1.0 will cause (1 - value) part of data points to end up
+                        in flat sparse-sigmoid region. For instance, threshold_init_cutoff = 0.9
+                        will set 10% points equal to 0.0 or 1.0.
+                    - Setting this value > 1.0 will result in a margin between data points and
+                        sparse-sigmoid cutoff value. All points will be between
+                        (0.5 - 0.5 / threshold_init_cutoff) and (0.5 + 0.5 / threshold_init_cutoff).
+            colsample_bytree: The random proportion of features allowed in each tree. The same
                 argument as in xgboost package. If less than 1, for each tree, it will only choose a
                 fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
                 will only selects among 90% of the features.
-            kwargs: for other old unused arguments for compatibility reasons.
+            kwargs: For other old unused arguments for compatibility reasons.
         """
         super().__init__()
         self.in_features, self.depth, self.num_trees, self.tree_dim = \
@@ -173,11 +173,11 @@ class ODST(ModuleWithInit):
         """Get the selected features of each tree.
 
         Args:
-            input: input data of shape [batch_size, in_features].
+            input: Input data of shape [batch_size, in_features].
 
         Returns:
-            feature_values: the feature input to trees in a batch.
-            Shape: [batch_size, num_trees, tree_depth].
+            feature_values: The feature input to trees in a batch with shape as
+                [batch_size, num_trees, tree_depth].
         """
         feature_selectors = self.get_feature_selectors()
         # ^--[in_features, num_trees, depth]
@@ -191,7 +191,7 @@ class ODST(ModuleWithInit):
         """Get the feature selectors of each tree of each depth.
 
         Returns:
-            feature_selectors: tensor of shape [in_features, num_trees, tree_depth]. The values of
+            feature_selectors: Tensor of shape [in_features, num_trees, tree_depth]. The values of
                 first dimension sum to 1.
         """
         if self.colsample_bytree < 1. and self.num_sample_feats == 1:
@@ -214,34 +214,34 @@ class GAM_ODST(ODST):
     def __init__(self, in_features, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
                  bin_function=entmoid15, initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
-                 selectors_detach=False, fs_normalize=True, ga2m=0, **kwargs):
+                 selectors_detach=True, fs_normalize=True, ga2m=0, **kwargs):
         """A layer of GAM ODST trees.
 
         Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
         to make it as a GAM or GA2M.
 
         Args:
-            in_features: number of features in the input tensor.
-            num_trees: number of trees in this layer.
-            tree_dim: number of response channels in the response of individual tree.
-            depth: number of splits in every tree.
+            in_features: Number of features in the input tensor.
+            num_trees: Number of trees in this layer.
+            tree_dim: Number of response channels in the response of individual tree.
+            depth: Number of splits in every tree.
             choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
                 f(tensor, dim).sum(dim) == 1.
             bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
-            initialize_response_: in-place initializer for tree output tensor.
-            initialize_selection_logits_: in-place initializer for logits that select features for
+            initialize_response_: In-place initializer for tree output tensor.
+            initialize_selection_logits_: In-place initializer for logits that select features for
                 the tree. Both thresholds and scales are initialized with data-aware init
                 (or .load_state_dict).
-            colsample_bytree: the random proportion of features allowed in each tree. The same
+            colsample_bytree: The random proportion of features allowed in each tree. The same
                 argument as in xgboost package. If less than 1, for each tree, it will only choose a
                 fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
                 will only selects among 90% of the features.
-            selectors_detach: if True, the selector will be detached before passing into the next layer.
+            selectors_detach: If True, the selector will be detached before passing into the next layer.
                 This will save GPU memory in the large dataset (e.g. Epsilon).
-            fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
+            fs_normalize: If True, we normalize the feature selectors be summed to 1. But False or
                 True do not make too much difference in performance.
-            ga2m: if set to 1, use GA2M, else use GAM.
-            kwargs: for other old unused arguments for compatibility reasons.
+            ga2m: If set to 1, use GA2M, else use GAM.
+            kwargs: For other old unused arguments for compatibility reasons.
         """
         if ga2m:
             # If specified as GA2M, but the tree depth is set to just 1 that can not model GA2M.
@@ -302,13 +302,13 @@ class GAM_ODST(ODST):
         """Get the selected features of each tree.
 
         Args:
-            input: input data of shape [batch_size, in_features].
-            return_fss: if True, return the feature selectors.
+            input: Input data of shape [batch_size, in_features].
+            return_fss: If True, return the feature selectors.
 
         Returns:
-            feature_values: the feature input to trees in a batch.
-                Shape: [batch_size, num_trees, tree_depth].
-            feature_selectors: (optional) the feature selectors.
+            feature_values: The feature input to trees in a batch with Shape as
+                [batch_size, num_trees, tree_depth].
+            feature_selectors: (Optional) the feature selectors.
         """
         feature_selectors = self.get_feature_selectors()
         # ^--[in_features, num_trees, depth=1]
@@ -359,13 +359,13 @@ class GAM_ODST(ODST):
         different (sets of) features than the current tree, and should be 1 if they are the same.
 
         Args:
-            myfs: the current feature selector of this layer.
-            pfs: the previous feature selectors.
+            myfs: The current feature selector of this layer.
+            pfs: The previous feature selectors.
 
         Returns:
-            fw: the feature weights for the previous trees' outputs. Values are between 0 and 1.
-                Shape: [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
-                depth=2 in GA2M.
+            fw: The feature weights for the previous trees' outputs. Values are between 0 and 1
+                with shape as [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in
+                GAM and depth=2 in GA2M.
         """
         # Do a row-wise inner product between prev selectors and cur ones
         if not self.ga2m:
@@ -397,36 +397,36 @@ class GAMAttODST(GAM_ODST):
     def __init__(self, in_features, num_trees, tree_dim=1, depth=6, choice_function=entmax15,
                  bin_function=entmoid15, initialize_response_=nn.init.normal_,
                  initialize_selection_logits_=nn.init.uniform_, colsample_bytree=1.,
-                 selectors_detach=False, ga2m=0, prev_in_features=0, dim_att=8, **kwargs):
+                 selectors_detach=True, ga2m=0, prev_in_features=0, dim_att=8, **kwargs):
         """A layer of GAM ODST trees with attention mechanism.
 
         Change a layer of ODST trees to make each tree only depend on at most 1 or 2 features
         to make it as a GAM or GA2M. And also add an attention between layers.
 
         Args:
-            in_features: number of features in the input tensor.
-            num_trees: number of trees in this layer.
-            tree_dim: number of response channels in the response of individual tree.
-            depth: number of splits in every tree.
+            in_features: Number of features in the input tensor.
+            num_trees: Number of trees in this layer.
+            tree_dim: Number of response channels in the response of individual tree.
+            depth: Number of splits in every tree.
             choice_function: f(tensor, dim) -> R_simplex computes feature weights s.t.
                 f(tensor, dim).sum(dim) == 1.
             bin_function: f(tensor) -> R[0, 1], computes tree leaf weights.
-            initialize_response_: in-place initializer for tree output tensor.
+            initialize_response_: In-place initializer for tree output tensor.
             initialize_selection_logits_: in-place initializer for logits that select features for
                 the tree. Both thresholds and scales are initialized with data-aware init
                 (or .load_state_dict).
-            colsample_bytree: the random proportion of features allowed in each tree. The same
+            colsample_bytree: The random proportion of features allowed in each tree. The same
                 argument as in xgboost package. If less than 1, for each tree, it will only choose a
                 fraction of features to train. For instance, if colsample_bytree = 0.9, each tree
                 will only selects among 90% of the features.
-            selectors_detach: if True, the selector will be detached before passing into the next layer.
+            selectors_detach: If True, the selector will be detached before passing into the next layer.
                 This will save GPU memory in the large dataset (e.g. Epsilon).
-            fs_normalize: if True, we normalize the feature selectors be summed to 1. But False or
+            fs_normalize: If True, we normalize the feature selectors be summed to 1. But False or
                 True do not make too much difference in performance.
-            ga2m: if set to 1, use GA2M, else use GAM.
-            prev_in_features: the number of previous layers' outputs.
-            dim_att: the dimension of attention embedding to reduce memory consumption.
-            kwargs: for other old unused arguments for compatibility reasons.
+            ga2m: If set to 1, use GA2M, else use GAM.
+            prev_in_features: The number of previous layers' outputs.
+            dim_att: The dimension of attention embedding to reduce memory consumption.
+            kwargs: For other old unused arguments for compatibility reasons.
         """
         super().__init__(
             in_features=in_features,
@@ -464,12 +464,12 @@ class GAMAttODST(GAM_ODST):
         different (sets of) features than the current tree, and should be 1 if they are the same.
 
         Args:
-            feature_selectors: the current feature selector of this layer.
-            pfs: the previous feature selectors.
+            feature_selectors: The current feature selector of this layer.
+            pfs: The previous feature selectors.
 
         Returns:
-            fw: the feature weights for the previous trees' outputs. Values are between 0 and 1.
-                Shape: [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
+            fw: The feature weights for the previous trees' outputs. Values are between 0 and 1 with
+                shape as [prev_trees_outputs, current_tree_outputs, depth], where depth=1 in GAM and
                 depth=2 in GA2M.
         """
         assert self.prev_in_features > 0

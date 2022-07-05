@@ -409,10 +409,10 @@ def make_predictions(model_name, X):
 
     Args:
         model_name: the model name. It's saved under logs/{model_name}/.
-        X: the input data. Type: pandas dataframe.
+        X (pandas dataframe): the input data.
 
     Returns:
-        ret: the prediction on X. Type: numpy array.
+        ret (numpy array): the prediction on X.
     """
     saved_dir = pjoin('logs', model_name)
     hparams = json.load(open(pjoin(saved_dir, 'hparams.json')))
@@ -599,4 +599,3 @@ def get_gpu_stat(pitem: str, device_id=0):
 
     gpu_usage = [float(x) for x in result.stdout.strip().split(os.linesep)]
     return gpu_usage[device_id]
-

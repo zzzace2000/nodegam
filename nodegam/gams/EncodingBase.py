@@ -10,7 +10,7 @@ class EncodingBase(object):
     def get_GAM_df(self, x_values_lookup=None, **kwargs):
         # Make x_values_lookup as onehot encoding!
         if x_values_lookup is not None:
-            x_values_lookup = self.convert_x_values_lookup(x_values_lookup)
+            x_values_lookup = self._convert_x_values_lookup(x_values_lookup)
 
         # Get the original DF
         df = super().get_GAM_df(x_values_lookup, **kwargs)
@@ -22,7 +22,7 @@ class EncodingBase(object):
         # change it back to non-onehot encoding df
         return self.revert_dataframe(df)
 
-    def convert_x_values_lookup(self, x_values_lookup=None):
+    def _convert_x_values_lookup(self, x_values_lookup=None):
         raise NotImplementedError()
 
     def revert_dataframe(self, df):
@@ -30,7 +30,7 @@ class EncodingBase(object):
         
 
 class LabelEncodingFitMixin(EncodingBase):
-    def convert_x_values_lookup(self, x_values_lookup=None):
+    def _convert_x_values_lookup(self, x_values_lookup=None):
         need_label_encoding = hasattr(self, 'cat_columns') and len(self.cat_columns) > 0 \
                               and x_values_lookup is not None
         if not need_label_encoding:
@@ -127,7 +127,7 @@ class LabelEncodingRegressorMixin(LabelEncodingFitMixin):
 
 
 class OnehotEncodingFitMixin(EncodingBase):
-    def convert_x_values_lookup(self, x_values_lookup=None):
+    def _convert_x_values_lookup(self, x_values_lookup=None):
         need_label_encoding = \
             hasattr(self, 'cat_columns') \
             and len(self.cat_columns) > 0 \
@@ -229,7 +229,8 @@ class OnehotEncodingFitMixin(EncodingBase):
 
         return super().fit(X, y, **kwargs)
 
-    def transform_X_to_fit_model_feats(self, X):
+    def _transform_X_to_fit_model_feats(self, X):
+        """Do one-hot encoding."""
         X = pd.get_dummies(X)
         if len(X.columns) == len(self.feature_names) and np.all(X.columns == self.feature_names):
             return X
@@ -245,7 +246,7 @@ class OnehotEncodingFitMixin(EncodingBase):
         # in bagging, the coming X is from numpy. Don't transform
         if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
                 and len(self.cat_columns) > 0:
-            X = self.transform_X_to_fit_model_feats(X)
+            X = self._transform_X_to_fit_model_feats(X)
 
         return super().predict(X)
 
@@ -255,7 +256,7 @@ class OnehotEncodingClassifierMixin(OnehotEncodingFitMixin):
         # in bagging, the coming X is from numpy. Don't transform
         if isinstance(X, pd.DataFrame) and hasattr(self, 'cat_columns') \
                 and len(self.cat_columns) > 0:
-            X = self.transform_X_to_fit_model_feats(X)
+            X = self._transform_X_to_fit_model_feats(X)
 
         return super().predict_proba(X)
 

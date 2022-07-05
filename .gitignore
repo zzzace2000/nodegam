@@ -9,6 +9,7 @@ loss_figs/
 resources/pid_ref/
 run.sh
 test.py
+docs/source/notebooks
 
 # node and NPM
 npm-debug.log
@@ -45,6 +46,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg/
+*.eggs/
 
 # Installer logs
 pip-log.txt

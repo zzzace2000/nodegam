@@ -28,18 +28,19 @@ class ODSTBlock(nn.Sequential):
         """Neural Oblivious Decision Ensembles (NODE).
 
         Args:
-            in_features: the input dimension of dataset.
-            num_trees: how many ODST trees in a layer.
-            num_layers: how many layers of trees.
-            num_classes: how many classes to predict. It's the output dim.
-            addi_tree_dim: additional dimension for the outputs of each tree. If the value x > 0,
+            in_features: The input dimension of dataset.
+            num_trees: How many ODST trees in a layer.
+            num_layers: How many layers of trees.
+            num_classes: How many classes to predict. It's the output dim.
+            addi_tree_dim: Additional dimension for the outputs of each tree. If the value x > 0,
                 each tree outputs a (1 + x) dimension of vector.
-            output_dropout: the dropout rate on the output of each tree.
-            init_bias: if set to True, it adds a trainable bias to the output of the model.
-            add_last_linear: if set to True, add a last linear layer to sum outputs of all trees.
-            last_dropout: if add_last_layer is True, then it adds a dropout on the weight og last
+            output_dropout: The dropout rate on the output of each tree.
+            init_bias: If set to True, it adds a trainable bias to the output of the model.
+            add_last_linear: If set to True, add a last linear layer to sum outputs of all trees.
+            last_dropout: If add_last_layer is True, then it adds a dropout on the weight og last
                 linear year.
-            l2_lambda: add a l2 penalty on the outputs of trees.
+            l2_lambda: Add a l2 penalty on the outputs of trees.
+            kwargs: The kwargs for initializing odst trees.
         """
         layers = self.create_layers(in_features, num_trees, num_layers,
                                     tree_dim=num_classes + addi_tree_dim,
@@ -75,11 +76,11 @@ class ODSTBlock(nn.Sequential):
         """Create layers of oblivious trees.
 
         Args:
-            in_features: the dim of input features.
-            num_trees: the number of trees in a layer.
-            num_layers: the number of layers.
-            tree_dim: the output dimension of each tree.
-            kwargs: the kwargs for initializing odst trees.
+            in_features: The dim of input features.
+            num_trees: The number of trees in a layer.
+            num_layers: The number of layers.
+            tree_dim: The output dimension of each tree.
+            kwargs: The kwargs for initializing odst trees.
         """
         layers = []
         for i in range(num_layers):
@@ -92,9 +93,9 @@ class ODSTBlock(nn.Sequential):
         """Model prediction.
 
         Args:
-            x: the input features.
-            return_outputs_penalty: if True, it returns the output l2 penalty.
-            feature_masks: only used in the pretraining. If passed, the outputs of trees belonging
+            x: The input features.
+            return_outputs_penalty: If True, it returns the output l2 penalty.
+            feature_masks: Only used in the pretraining. If passed, the outputs of trees belonging
                 to masked features (masks==1) is zeroed. This is like dropping out features directly.
         """
         outputs = self.run_with_layers(x)
@@ -182,7 +183,7 @@ class ODSTBlock(nn.Sequential):
         It's helpful for logging. Just to see how many trees focus on some features.
 
         Returns:
-            counts: shape of [num_layers, num_input_features (in_features)].
+            Counts of trees with shape of [num_layers, num_input_features (in_features)].
         """
         if type(self) is ODSTBlock:
             return None
@@ -196,7 +197,7 @@ class ODSTBlock(nn.Sequential):
         """Helper function to generate a model instance based on hyperparameters.
 
         Args:
-            args: the arguments from argparse. It specifies all hyperparameters.
+            args: The arguments from argparse. It specifies all hyperparameters.
         """
         if isinstance(args, dict):
             args = argparse.Namespace(**args)
@@ -292,27 +293,27 @@ class GAMAdditiveMixin(object):
         model's outputs y in a dataframe for each term.
 
         Args:
-            X: input 2d array (pandas). Note that it is the unpreprocessed data.
-            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+            X: Input 2d array (pandas). Note that it is the unpreprocessed data.
+            norm_fn: The data preprocessing function (E.g. quantile normalization) before feeding
                 into the model. Inputs: pandas X. Outputs: preprocessed outputs.
-            y_mu, y_std: the outputs of the model will be multiplied by y_std and then shifted by
+            y_mu, y_std: The outputs of the model will be multiplied by y_std and then shifted by
                 y_mu. It's useful in regression problem where target y is normalized to mean 0 and
                 std 1. Default: 0, 1.
-            device: use which device to run the model. Default: 'cpu'.
-            batch_size: batch size.
-            tol: the tolerance error for the interaction purification that moves mass from
+            device: Use which device to run the model. Default: 'cpu'.
+            batch_size: Batch size.
+            tol: The tolerance error for the interaction purification that moves mass from
                 interactions to mains (see the "purification" of the paper).
-            purify: if True, we move all effects of the interactions to main effects.
+            purify: If True, we move all effects of the interactions to main effects.
 
         Returns:
-            df: a pandas table that records all main and interaction terms. The columns are:
-                feat_name: the feature name. E.g. "Hour".
-                feat_idx: the feature index. E.g. 2.
-                x: the unique values of the feature. E.g. [0.5, 3, 4.7].
-                y: the values of the output. E.g. [-0.2, 0.3, 0.5].
-                importance: the feature importance. It's calculated as the weighted average of
-                    the absolute value of y weighted by the counts of each unique value.
-                counts: the counts of each unique value in the data. E.g. [20, 10, 3].
+            A pandas table that records all main and interaction terms. The columns include::
+            feat_name: The feature name. E.g. "Hour".
+            feat_idx: The feature index. E.g. 2.
+            x: The unique values of the feature. E.g. [0.5, 3, 4.7].
+            y: The values of the output. E.g. [-0.2, 0.3, 0.5].
+            importance: The feature importance. It's calculated as the weighted average of
+                the absolute value of y weighted by the counts of each unique value.
+            counts: The counts of each unique value in the data. E.g. [20, 10, 3].
         """
         assert self.num_classes == 1, 'Has not support > 2 classes. But should be easy.'
         assert isinstance(X, pd.DataFrame)
@@ -399,12 +400,12 @@ class GAMAdditiveMixin(object):
         under each main or interaction term for each example.
 
         Args:
-            x: inputs to the model. A Pytorch Tensor of [batch_size, in_features].
+            x: Inputs to the model. A Pytorch Tensor of [batch_size, in_features].
     
         Returns:
-            result: a tensor with shape [batch_size, num_unique_terms, output_dim] where
-                'num_unique_terms' is the total number of main and interaction effects, and
-                'output_dim' is the output_dim (num_classes). Usually 1.
+            A tensor with shape [batch_size, num_unique_terms, output_dim] where
+            'num_unique_terms' is the total number of main and interaction effects, and
+            'output_dim' is the output_dim (num_classes). Usually 1.
         """
         outputs = self.run_with_layers(x)
         td = self.num_classes + self.addi_tree_dim
@@ -451,27 +452,34 @@ class GAMAdditiveMixin(object):
         input value for each term.
 
         Args:
-            X: input 2d array (pandas). Note that it is the unnormalized data.
-            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+            X: Input 2d array (pandas). Note that it is the unnormalized data.
+            norm_fn: The data preprocessing function (E.g. quantile normalization) before feeding
                 into the model. Inputs: pandas X. Outputs: preprocessed outputs.
-            y_mu, y_std: the outputs of the model will be multiplied by y_std and then shifted by
+            y_mu, y_std: The outputs of the model will be multiplied by y_std and then shifted by
                 y_mu. It's useful in regression problem where target y is normalized to mean 0 and
                 std 1. Default: 0, 1.
-            device: use which device to run the model. Default: 'cpu'.
-            batch_size: batch size.
-            tol: the tolerance error for the interaction purification that moves mass from
+            device: Use which device to run the model. Default: 'cpu'.
+            batch_size: Batch size.
+            tol: The tolerance error for the interaction purification that moves mass from
                 interactions to mains (see the "purification" of the paper).
-            purify: if True, we move all effects of the interactions to main effects.
+            purify: If True, we move all effects of the interactions to main effects.
 
         Returns:
-            E.g. if a model learns 2 main terms [1, 2] and an interaction term (2, 3), it returns:
-            vals: a dict that maps the term to the map of X (value) and y (outputs).
-                E.g. {1: {0: -0.2, ..., 23: 0.4}, 2: {...}, (2, 3): {...}}.
-            counts: a dict that maps the term to the map of X (value) and the counts in dataset.
-                E.g. {1: {0: 2, ..., 23: 10}, 2: {...}, (2, 3): {...}}.
-            terms: all the main and interaction terms. E.g. [1, 2, (2, 3)].
+            vals (dict of dict): A dict that has keys as feature index and value as another dict
+                that maps the unique value of input X to the output of the model. For example, if a
+                model learns 2 main effects for features 1 and 2, and an interaction term between
+                features 1 and 2, we could have::
+                {1: {0: -0.2, 1: 0.3, 2: 1},
+                 2: {1: 0.3, 2: -0.5},
+                 (1, 2): {(0, 1): 1, (0, 2): 0.3, (1, 1): -1, (1, 2): -0.3, (2, 1): 0, (2, 2): 1}}.
+            counts (dict of dict): Same format as `vals` but the values are the counts in the data.
+                It has a dict that has keys as feature index and value as another dict that maps
+                the unique value of input X to the counts of occurence in the data. For example::
+                {1: {0: 10, 1: 100, 2: 90},
+                 2: {1: 80, 2: 120},
+                 (1, 2): {(0, 1): 10, (0, 2): 50, (1, 1): 100, (1, 2): 10, (2, 1): 20, (2, 2): 10}}.
+            terms (list): all the main and interaction terms. E.g. [1, 2, (2, 3)].
         """
-
         with Timer('Run values through model'), torch.no_grad():
             results = self._run_vals_with_additive_term_with_batch(
                 X, device, batch_size, norm_fn=norm_fn, y_std=y_std)
@@ -489,19 +497,19 @@ class GAMAdditiveMixin(object):
         It calls self.run_with_additive_terms() with mini-batch.
 
         Args:
-            X: input 2d array (pandas). Note that it is the unnormalized data.
-            device: use which device to run the model. Default: 'cpu'.
-            batch_size: batch size.
-            norm_fn: the data preprocessing function (E.g. quantile normalization) before feeding
+            X: Input 2d array (pandas). Note that it is the unnormalized data.
+            device: Use which device to run the model. Default: 'cpu'.
+            batch_size: Batch size.
+            norm_fn: The data preprocessing function (E.g. quantile normalization) before feeding
                 into the model. Inputs: pandas X. Outputs: preprocessed outputs.
-            y_std: the outputs of the model will be multiplied by y_std. It's useful in regression
+            y_std: The outputs of the model will be multiplied by y_std. It's useful in regression
                 problem where target y is normalized to std 1. Default: 1.
 
         Returns:
-            results: the model's output of each term. A numpy tensor of shape
-            [num_data, num_unique_terms, output_dim] where:
-                'num_unique_terms' is the total number of main and interaction effects, and
-                'output_dim' is the output_dim (num_classes). Usually 1.
+            results (numpy array): The model's output of each term. A numpy tensor of shape
+                [num_data, num_unique_terms, output_dim] where 'num_unique_terms' is the total
+                number of main and interaction effects, and 'output_dim' is the output_dim
+                (num_classes). Usually 1.
         """
 
         results = process_in_chunks(
@@ -515,18 +523,26 @@ class GAMAdditiveMixin(object):
         """Extracts the values and counts based on the outputs of models with additive terms.
 
         Args:
-            results: the model's outputs of self._run_vals_with_additive_term_with_batch. It's a
+            results: The model's outputs of self._run_vals_with_additive_term_with_batch. It's a
                 numpy tensor of shape [num_data, num_unique_terms, output_dim] that represents the
                 model's output of each data on each additive term.
-            X: the inputs of the data.
+            X: The inputs of the data.
 
         Returns:
-            E.g. if a model learns 2 main terms [1, 2] and an interaction term (2, 3), it returns:
-            vals: a dict that maps the term to the map of X (value) and y (outputs).
-                E.g. {1: {0: -0.2, ..., 23: 0.4}, 2: {...}, (2, 3): {...}}.
-            counts: a dict that maps the term to the map of X (value) and the counts in dataset.
-                E.g. {1: {0: 2, ..., 23: 10}, 2: {...}, (2, 3): {...}}.
-            terms: all the main and interaction terms. E.g. [1, 2, (2, 3)].
+            vals (dict of dict): A dict that has keys as feature index and value as another dict
+                that maps the unique value of input X to the output of the model. For example, if a
+                model learns 2 main effects for features 1 and 2, and an interaction term between
+                features 1 and 2, we could have::
+                {1: {0: -0.2, 1: 0.3, 2: 1},
+                 2: {1: 0.3, 2: -0.5},
+                 (1, 2): {(0, 1): 1, (0, 2): 0.3, (1, 1): -1, (1, 2): -0.3, (2, 1): 0, (2, 2): 1}}.
+            counts (dict of dict): Same format as `vals` but the values are the counts in the data.
+                It has a dict that has keys as feature index and value as another dict that maps
+                the unique value of input X to the counts of occurence in the data. For example::
+                {1: {0: 10, 1: 100, 2: 90},
+                 2: {1: 80, 2: 120},
+                 (1, 2): {(0, 1): 10, (0, 2): 50, (1, 1): 100, (1, 2): 10, (2, 1): 20, (2, 2): 10}}.
+            terms (list): all the main and interaction terms. E.g. [1, 2, (2, 3)].
         """
         terms = self.get_additive_terms()
 
@@ -572,13 +588,22 @@ class GAMAdditiveMixin(object):
     def _purify_interactions(self, vals, counts, tol=1e-3):
         """Purify the interaction term to move the mass from interaction to the main effect.
 
-        See the Supp. D in the paper for details. It modifies the vals in-place for the main terms.
+        See the Supp. D in the paper for details. It modifies the vals in-place for arguments vals.
 
         Args:
-            vals: for each additive term, it maps between the unique value of x and the output of
-                model. E.g. {1: {1: -0.1, 2.5: 0.3, ...}}.
-            counts: for each additive term, it maps between the unique value of x and the counts in
-                the data. E.g. {1: {1: 2, 2.5: 5, ...}}.
+            vals (dict of dict): A dict that has keys as feature index and value as another dict
+                that maps the unique value of input X to the output of the model. For example, if a
+                model learns 2 main effects for features 1 and 2, and an interaction term between
+                features 1 and 2, we could have::
+                {1: {0: -0.2, 1: 0.3, 2: 1},
+                 2: {1: 0.3, 2: -0.5},
+                 (1, 2): {(0, 1): 1, (0, 2): 0.3, (1, 1): -1, (1, 2): -0.3, (2, 1): 0, (2, 2): 1}}.
+            counts (dict of dict): Same format as `vals` but the values are the counts in the data.
+                It has a dict that has keys as feature index and value as another dict that maps
+                the unique value of input X to the counts of occurence in the data. For example::
+                {1: {0: 10, 1: 100, 2: 90},
+                 2: {1: 80, 2: 120},
+                 (1, 2): {(0, 1): 10, (0, 2): 50, (1, 1): 100, (1, 2): 10, (2, 1): 20, (2, 2): 10}}.
         """
         for t in vals:
             # If it's not an interaction term, continue.
@@ -609,13 +634,14 @@ class GAMAdditiveMixin(object):
         """Get the additive terms in the GAM/GA2M model.
 
         It returns all the main and interaction effects in the NodeGAM.
+
         Args:
-            return_inverse: if True, it returns the map back from each additive term to the index
-            of trees. It's useful to check which tree focuses on which feature set.
+            return_inverse (bool): If True, it returns the map back from each additive term to the
+                index of trees. It's useful to check which tree focuses on which feature set.
 
         Returns:
-            tuple_terms: a list of integer or tuple that represents all the additive terms it
-            learns. E.g. [2, 4, (2, 3), (1, 4)].
+            tuple_terms (list): A list of integer or tuple that represents all the additive terms it
+                learns. E.g. [2, 4, (2, 3), (1, 4)].
         """
         fs = torch.cat([l.get_feature_selectors() for l in self], dim=1).sum(dim=-1)
         fs[fs > 0.] = 1.
@@ -640,10 +666,11 @@ class GAMAdditiveMixin(object):
         """Make onehot or multi-hot vectors into a list of integers or tuple.
 
         Args:
-            terms: a pytorch tensor of [in_features, uniq_terms].
+            terms (Pytorch tensor): a one-hot matrix with each column has only one entry as 1.
+                Shape: [in_features, uniq_GAM_terms].
 
         Returns:
-            tuple_terms: a list of integers or tuples with the size of uniq_terms.
+            tuple_terms (list): A list of integers or tuples of all the GAM terms.
         """
         r_idx, c_idx = torch.nonzero(terms, as_tuple=True)
         tuple_terms = []
@@ -665,17 +692,42 @@ class GAMAdditiveMixin(object):
 class GAMBlock(GAMAdditiveMixin, ODSTBlock):
     """Node-GAM model."""
 
-    def __init__(self, *args, l2_interactions=0., l1_interactions=0., **kwargs):
+    def __init__(self, in_features, num_trees, num_layers, num_classes=1, addi_tree_dim=0,
+                 output_dropout=0.0, init_bias=True, add_last_linear=True, last_dropout=0.,
+                 l2_lambda=0., l2_interactions=0., l1_interactions=0., **kwargs):
         """Initialization of Node-GAM.
 
         Args:
-            *args: other arguments inherited from ODSTBlock.
-            l2_interactions: penalize the l2 magnitude of the output of trees that have
+            in_features: The input dimension of dataset.
+            num_trees: How many ODST trees in a layer.
+            num_layers: How many layers of trees.
+            num_classes: How many classes to predict. It's the output dim.
+            addi_tree_dim: Additional dimension for the outputs of each tree. If the value x > 0,
+                each tree outputs a (1 + x) dimension of vector.
+            output_dropout: The dropout rate on the output of each tree.
+            init_bias: If set to True, it adds a trainable bias to the output of the model.
+            add_last_linear: If set to True, add a last linear layer to sum outputs of all trees.
+            last_dropout: If add_last_layer is True, it adds a dropout on the weight og last
+                linear year.
+            l2_lambda: Add a l2 penalty on the outputs of trees.
+            l2_interactions: Penalize the l2 magnitude of the output of trees that have
                 pairwise interactions. Default: 0.
-            l1_interactions: penalize the l1 magnitude of the output of trees that have
+            l1_interactions: Penalize the l1 magnitude of the output of trees that have
                 pairwise interactions. Default: 0.
+            kwargs (dict): The arguments for underlying GAM ODST trees.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            in_features=in_features,
+            num_trees=num_trees,
+            num_layers=num_layers,
+            num_classes=num_classes,
+            addi_tree_dim=addi_tree_dim,
+            output_dropout=output_dropout,
+            init_bias=init_bias,
+            add_last_linear=add_last_linear,
+            last_dropout=last_dropout,
+            l2_lambda=l2_lambda,
+            **kwargs)
         self.l2_interactions = l2_interactions
         self.l1_interactions = l1_interactions
 
@@ -685,11 +737,11 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         """Create layers.
 
         Args:
-            in_features: the input dimension (feature).
-            num_trees: number of trees in a layer.
-            num_layers: number of layers.
-            tree_dim: the dimension of the tree's output. Usually equal to num of classes.
-            *kwargs: the arguments for underlying GAM ODST trees.
+            in_features: The input dimension (feature).
+            num_trees: Number of trees in a layer.
+            num_layers: Number of layers.
+            tree_dim: The dimension of the tree's output. Usually equal to num of classes.
+            kwargs (dict): The arguments for underlying GAM ODST trees.
         """
         layers = []
         for i in range(num_layers):
@@ -704,7 +756,7 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         It helps regularize the model.
 
         Args:
-            outputs: the outputs of trees. A tensor of shape [batch_size, num_trees, tree_dim].
+            outputs: The outputs of trees. A tensor of shape [batch_size, num_trees, tree_dim].
         """
         # Normal L2 weight decay on outputs
         penalty = super().calculate_l2_penalty(outputs)
@@ -740,12 +792,12 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         """Run the examples through the layers of trees.
 
         Args:
-            x: the input tensor of shape [batch_size, in_features].
-            return_fs: if True, it returns the feature selectors of each tree.
+            x: The input tensor of shape [batch_size, in_features].
+            return_fs: If True, it returns the feature selectors of each tree.
 
         Returns:
-            outputs: the trees' outputs [batch_size, num_trees, tree_dim].
-            prev_feature_selectors: (Optional) if return_fs is True, this returns the feature
+            outputs: The trees' outputs [batch_size, num_trees, tree_dim].
+            prev_feature_selectors: Only returns when return_fs is True, this returns the feature
                 selector of each ODST tree of shape [in_features, num_trees, tree_depth].
         """
         initial_features = x.shape[-1]
@@ -773,8 +825,7 @@ class GAMBlock(GAMAdditiveMixin, ODSTBlock):
         """Load the initialized model by its hyperparameters.
 
         Args:
-            args: the arguments of the model. Can passed in a dictionary or a namespace.
-
+            args: The arguments of the model. Can passed in a dictionary or a namespace.
         """
         if isinstance(args, dict):
             args = argparse.Namespace(**args)
@@ -916,11 +967,11 @@ class GAMAttBlock(GAMBlock):
         """Create layers of oblivious trees.
 
         Args:
-            in_features: the dim of input features.
-            num_trees: the number of trees in a layer.
-            num_layers: the number of layers.
-            tree_dim: the output dimension of each tree.
-            kwargs: the kwargs for initializing GAMAtt ODST trees.
+            in_features: The dim of input features.
+            num_trees: The number of trees in a layer.
+            num_layers: The number of layers.
+            tree_dim: The output dimension of each tree.
+            kwargs: The kwargs for initializing GAMAtt ODST trees.
         """
         layers = []
         prev_in_features = 0
