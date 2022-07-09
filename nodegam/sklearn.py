@@ -13,15 +13,16 @@ import numpy as np
 import pandas as pd
 import torch
 from qhoptim.pyt import QHAdam
+from scipy.special import softmax
 from sklearn.model_selection import train_test_split
 
 from .arch import GAMBlock, GAMAttBlock
 from .gams.utils import bin_data
-from .vis_utils import vis_GAM_effects
 from .mypreprocessor import MyPreprocessor
 from .nn_utils import EM15Temp, entmoid15
 from .trainer import Trainer
 from .utils import iterate_minibatches, process_in_chunks, check_numpy, sigmoid_np
+from .vis_utils import vis_GAM_effects
 
 
 class NodeGAMBase(object):
@@ -40,6 +41,7 @@ class NodeGAMBase(object):
         # Model
         arch='GAM',
         ga2m=1,
+        num_classes=1,
         num_trees=200,
         num_layers=2,
         depth=3,
@@ -68,7 +70,8 @@ class NodeGAMBase(object):
         """NodeGAM Base."""
         assert arch in ['GAM', 'GAMAtt'], 'Invalid arch: ' + str(arch)
         assert quantile_dist in ['normal', 'uniform'], 'Invalid dist: ' + str(quantile_dist)
-        assert objective in ['logloss', 'negative_auc', 'mse'], 'Invalid objective: ' + str(objective)
+        assert objective in ['ce_loss', 'negative_auc', 'mse', 'error_rate'], \
+            'Invalid objective: ' + str(objective)
 
         if name is None:
             name = 'tmp_{}.{:0>2d}.{:0>2d}_{:0>2d}:{:0>2d}'.format(*time.gmtime()[:5])
@@ -80,6 +83,7 @@ class NodeGAMBase(object):
         self.validation_size = validation_size
         self.arch = arch
         self.ga2m = ga2m
+        self.num_classes = num_classes
         self.num_trees = num_trees
         self.num_layers = num_layers
         self.depth = depth
@@ -147,7 +151,7 @@ class NodeGAMBase(object):
             in_features=X_train.shape[1],
             num_trees=self.num_trees,
             num_layers=self.num_layers,
-            num_classes=1, # Only supports binary classification now
+            num_classes=self.num_classes,
             addi_tree_dim=self.addi_tree_dim,
             depth=self.depth,
             choice_function=choice_fn,
@@ -205,9 +209,12 @@ class NodeGAMBase(object):
                 if self.objective == 'negative_auc':
                     err = trainer.evaluate_negative_auc(X_valid, y_valid, device=self.device,
                                                         batch_size=self.batch_size * 2)
-                elif self.objective == 'logloss':
-                    err = trainer.evaluate_logloss(X_valid, y_valid, device=self.device,
-                                                   batch_size=self.batch_size * 2)
+                elif self.objective == 'error_rate':
+                    err = trainer.evaluate_classification_error(
+                        X_valid, y_valid, device=self.device, batch_size=self.batch_size * 2)
+                elif self.objective == 'ce_loss':
+                    err = trainer.evaluate_ce_loss(
+                        X_valid, y_valid, device=self.device, batch_size=self.batch_size * 2)
                 elif self.objective == 'mse':
                     err = trainer.evaluate_mse(X_valid, y_valid, device=self.device,
                                                batch_size=self.batch_size * 2)
@@ -273,6 +280,8 @@ class NodeGAMBase(object):
         Returns:
             df: a GAM dataframe with each row representing a GAM term.
         """
+        assert self.num_classes == 1, 'The GAM visualization has not supported more than 1 class.'
+
         if max_n_bins is not None and max_n_bins > 0:
             all_X = bin_data(all_X, max_n_bins=max_n_bins)
 
@@ -324,6 +333,7 @@ class NodeGAMClassifier(NodeGAMBase):
         # Model
         arch='GAM',
         ga2m=1,
+        num_classes=1,
         num_trees=200,
         num_layers=2,
         depth=3,
@@ -345,7 +355,7 @@ class NodeGAMClassifier(NodeGAMBase):
         report_frequency=100,
         fp16=0,
         device='cuda',
-        objective='logloss',
+        objective='ce_loss',
         verbose=1,
     ):
         """A NodeGAM Classfier that follows sklearn interface to train.
@@ -367,6 +377,9 @@ class NodeGAMClassifier(NodeGAMBase):
             arch: choose between ['GAM', 'GAMAtt']. GAMAtt is the architecture with attention. Often
                  GAMAtt is better in large datasets while GAM is better in smaller ones.
             ga2m: if 0, only model GAM. If 1, model GA2M.
+            num_classes: number of target classes. If set to 1, it is binary classification. Set to
+                > 2 for multi-class classifications, but the visualization is not available yet for
+                the multi-class setup.
             num_trees: number of trees per layer.
             num_layers: number of layers of trees.
             depth: depth of the tree. Should be at least 2 if ga2m=1.
@@ -390,12 +403,25 @@ class NodeGAMClassifier(NodeGAMBase):
             report_frequency: how many steps to report.
             fp16: if 1, use fp16 to optimize.
             device='cuda': choose from ['cpu', 'cuda'].
-            objective: choose from ['logloss', 'negative_auc']. The evaluation objective.
+            objective: the evaluation objective. Only used in binary classification i.e.
+                `num_classes`=1 . Choose from ['ce_loss', 'negative_auc', 'error_rate']. If
+                num_classes > 2 (multi-class classifier), only ['ce_loss', 'error_rate'] is allowed.
             verbose: if 1, print the training progress.
         """
         assert arch in ['GAM', 'GAMAtt'], 'Invalid arch: ' + str(arch)
         assert quantile_dist in ['normal', 'uniform'], 'Invalid dist: ' + str(quantile_dist)
-        assert objective in ['logloss', 'negative_auc'], 'Invalid objective: ' + str(objective)
+        if num_classes == 2:
+            self.print('[Warning] num_classes is set to 2 but it should be 1 in the binary '
+                       'classification. Change it to be 1.')
+            num_classes = 1
+
+        if num_classes == 1:
+            assert objective in ['ce_loss', 'negative_auc', 'error_rate'], \
+                f"Invalid objective: {objective}. Chose from ['ce_loss', 'negative_auc', " \
+                f"'error_rate']."
+        elif num_classes > 1:
+            assert objective in ['ce_loss', 'error_rate'], \
+                f"Invalid objective: {objective}. Chose from ['ce_loss', 'error_rate']."
 
         super().__init__(
             in_features=in_features,
@@ -407,6 +433,7 @@ class NodeGAMClassifier(NodeGAMBase):
             seed=seed,
             arch=arch,
             ga2m=ga2m,
+            num_classes=num_classes,
             num_trees=num_trees,
             num_layers=num_layers,
             depth=depth,
@@ -445,9 +472,13 @@ class NodeGAMClassifier(NodeGAMBase):
         assert isinstance(X, pd.DataFrame), 'Has to be a dataframe.'
 
         logits = self.predict(X)
-        prob = sigmoid_np(logits)
-        # Back to sklearn format
-        return np.vstack([1. - prob, prob]).T
+        if self.num_classes == 1:
+            prob = sigmoid_np(logits)
+            # Back to sklearn format as shape [N, 2]
+            prob = np.vstack([1. - prob, prob]).T
+        else:
+            prob = softmax(logits, axis=-1)
+        return prob
 
     def predict(self, X: pd.DataFrame):
         """Predict logits.
@@ -456,7 +487,7 @@ class NodeGAMClassifier(NodeGAMBase):
             X (pandas dataframe): Input.
 
         Returns:
-            logits (numpy array): logits in binary classfication.
+            logits (numpy array): logits.
         """
         assert isinstance(X, pd.DataFrame), 'Has to be a dataframe.'
 
@@ -506,7 +537,6 @@ class NodeGAMRegressor(NodeGAMBase):
         report_frequency=100,
         fp16=0,
         device='cuda',
-        objective='mse',
         verbose=1,
     ):
         """A NodeGAM Regressor that follows sklearn interface to train.
@@ -551,12 +581,10 @@ class NodeGAMRegressor(NodeGAMBase):
             report_frequency: how many steps to report.
             fp16: if 1, use fp16 to optimize.
             device='cuda': choose from ['cpu', 'cuda'].
-            objective: choose from ['mse']. The evaluation objective.
             verbose: if 1, print the training progress.
         """
         assert arch in ['GAM', 'GAMAtt'], 'Invalid arch: ' + str(arch)
         assert quantile_dist in ['normal', 'uniform'], 'Invalid dist: ' + str(quantile_dist)
-        assert objective in ['mse'], 'Invalid objective: ' + str(objective)
 
         super().__init__(
             in_features=in_features,
@@ -589,7 +617,7 @@ class NodeGAMRegressor(NodeGAMBase):
             report_frequency=report_frequency,
             fp16=fp16,
             device=device,
-            objective=objective,
+            objective='mse',
             problem='regression',
             verbose=verbose,
         )

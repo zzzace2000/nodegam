@@ -7,6 +7,7 @@ from collections import OrderedDict
 from copy import deepcopy
 from os.path import join as pjoin, exists as pexists
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -71,8 +72,10 @@ class Trainer(nn.Module):
 			self.freeze_steps = 0
 
 		if problem == 'classification':
-			# In my datasets I only have binary classification
-			self.loss_function = (lambda x, y: F.binary_cross_entropy_with_logits(x, y.float()))
+			self.loss_function = (
+				lambda x, y: F.binary_cross_entropy_with_logits(x, y.float()) if x.ndim == 1
+					else F.cross_entropy(x, y)
+			)
 		elif problem == 'regression':
 			self.loss_function = (lambda y1, y2: F.mse_loss(y1.float(), y2.float()))
 		elif problem.startswith('pretrain'): # Not used
@@ -284,14 +287,18 @@ class Trainer(nn.Module):
 		return loss.item()
 
 	def evaluate_classification_error(self, X_test, y_test, device, batch_size=4096):
-		''' This is for evaluation of binary error '''
+		"""This is for evaluation of one or multi-class classification error rate."""
 		X_test = torch.as_tensor(X_test, device=device)
 		y_test = check_numpy(y_test)
 		self.model.train(False)
 		with torch.no_grad():
 			logits = process_in_chunks(self.model, X_test, batch_size=batch_size)
 			logits = check_numpy(logits)
-			error_rate = (y_test != (logits >= 0)).mean()
+			if logits.ndim == 1:
+				pred = (logits >= 0).astype(int)
+			else:
+				pred = logits.argmax(axis=-1)
+			error_rate = (y_test != pred).mean()
 		return error_rate
 
 	def evaluate_negative_auc(self, X_test, y_test, device, batch_size=4096):
@@ -326,17 +333,29 @@ class Trainer(nn.Module):
 			error_rate = ((y_test - prediction) ** 2).mean(axis=0)
 		return error_rate.astype(float).tolist()
 
-	def evaluate_logloss(self, X_test, y_test, device, batch_size=512):
+	def evaluate_ce_loss(self, X_test, y_test, device, batch_size=512):
+		"""Evaluate cross entropy loss for binary or multi-class targets.
+
+		Args:
+			X_test: input features.
+			y_test (numpy Int array or torch Long tensor): the target classes.
+
+		Returns:
+			celoss (float): the average cross entropy loss.
+		"""
 		X_test = torch.as_tensor(X_test, device=device)
 		y_test = check_numpy(y_test)
 		self.model.train(False)
 		with torch.no_grad():
 			logits = (process_in_chunks(self.model, X_test, batch_size=batch_size))
-			y_test = torch.tensor(y_test, device=device).float()
+			y_test = torch.tensor(y_test, device=device)
 
-			logloss = F.binary_cross_entropy_with_logits(logits, y_test).item()
-		logloss = float(logloss)  # To avoid annoying JSON unserializable bug
-		return logloss
+			if logits.ndim == 1:
+				celoss = F.binary_cross_entropy_with_logits(logits, y_test.float()).item()
+			else:
+				celoss = F.cross_entropy(logits, y_test).item()
+		celoss = float(celoss)  # To avoid annoying JSON unserializable bug
+		return celoss
 
 	def decrease_lr(self, ratio=0.1, min_lr=1e-6):
 		if self.lr <= min_lr:
