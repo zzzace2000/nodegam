@@ -50,6 +50,7 @@ class NodeGAMBase(object):
         output_dropout=0,
         last_dropout=0.3,
         l2_lambda=0,
+        dim_att=8,
         # Optimization
         n_last_checkpoints=5,
         batch_size=2048,
@@ -92,6 +93,7 @@ class NodeGAMBase(object):
         self.output_dropout = output_dropout
         self.last_dropout = last_dropout
         self.l2_lambda = l2_lambda
+        self.dim_att = dim_att
         self.n_last_checkpoints = n_last_checkpoints
         self.batch_size = batch_size
         self.lr = lr
@@ -163,6 +165,7 @@ class NodeGAMBase(object):
             add_last_linear=True,
             ga2m=self.ga2m,
             l2_lambda=self.l2_lambda,
+            **({} if self.arch == 'GAM' else {'dim_att': self.dim_att})
         )
 
         self.model.to(self.device)
@@ -342,6 +345,7 @@ class NodeGAMClassifier(NodeGAMBase):
         output_dropout=0,
         last_dropout=0.3,
         l2_lambda=0,
+        dim_att=8,
         # Optimization
         n_last_checkpoints=5,
         batch_size=2048,
@@ -390,6 +394,7 @@ class NodeGAMClassifier(NodeGAMBase):
             output_dropout: the dropout rate on the output of each tree.
             last_dropout: the dropout rate on the weight of the last linear layer.
             l2_lambda: the l2 penalty coefficient on the outputs of trees.
+            dim_att: the dimension of the attention embedding.
 
             n_last_checkpoints: number of the most recent checkpoints to take average.
             batch_size: batch size. Should be bigger than 1024.
@@ -442,6 +447,7 @@ class NodeGAMClassifier(NodeGAMBase):
             output_dropout=output_dropout,
             last_dropout=last_dropout,
             l2_lambda=l2_lambda,
+            dim_att=dim_att,
             # Optimization
             n_last_checkpoints=n_last_checkpoints,
             batch_size=batch_size,
@@ -524,6 +530,7 @@ class NodeGAMRegressor(NodeGAMBase):
         output_dropout=0,
         last_dropout=0.3,
         l2_lambda=0,
+        dim_att=8,
         # Optimization
         n_last_checkpoints=5,
         batch_size=2048,
@@ -568,6 +575,7 @@ class NodeGAMRegressor(NodeGAMBase):
             output_dropout: the dropout rate on the output of each tree.
             last_dropout: the dropout rate on the weight of the last linear layer.
             l2_lambda: the l2 penalty coefficient on the outputs of trees.
+            dim_att: the dimension of the attention embedding.
 
             n_last_checkpoints: number of the most recent checkpoints to take average.
             batch_size: batch size. Should be bigger than 1024.
@@ -604,6 +612,7 @@ class NodeGAMRegressor(NodeGAMBase):
             output_dropout=output_dropout,
             last_dropout=last_dropout,
             l2_lambda=l2_lambda,
+            dim_att=dim_att,
             # Optimization
             n_last_checkpoints=n_last_checkpoints,
             batch_size=batch_size,
