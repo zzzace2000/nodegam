@@ -272,14 +272,16 @@ class GAM_ODST(ODST):
         self.fs_normalize = fs_normalize
         self.ga2m = ga2m
 
-        # Remove the feature_selection logits defined in the ODST and instead re-initialize to only
-        # at most 1 or 2 depths.
-        del self.feature_selection_logits
-        the_depth = 1 if not self.ga2m else 2
-        self.feature_selection_logits = nn.Parameter(
-            torch.zeros([self.in_features, self.num_trees, the_depth]), requires_grad=True
-        )
-        initialize_selection_logits_(self.feature_selection_logits)
+        # If defined fs logits
+        if hasattr(self, 'feature_selection_logits'):
+            # Remove the feature_selection logits defined in the ODST and instead re-initialize to
+            # only at most 1 or 2 depths.
+            del self.feature_selection_logits
+            the_depth = 1 if not self.ga2m else 2
+            self.feature_selection_logits = nn.Parameter(
+                torch.zeros([self.in_features, self.num_trees, the_depth]), requires_grad=True
+            )
+            initialize_selection_logits_(self.feature_selection_logits)
 
     def forward(self, input, return_feature_selectors=True, prev_feature_selectors=None):
         self.prev_feature_selectors = prev_feature_selectors
