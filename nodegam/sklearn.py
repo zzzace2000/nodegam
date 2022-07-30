@@ -114,37 +114,44 @@ class NodeGAMBase(object):
 
         self.preprocessor = None
 
-    def fit(self, X: pd.DataFrame, y: np.ndarray):
+    def fit(self, X: pd.DataFrame, y: np.ndarray,
+            X_val: pd.DataFrame = None, y_val: np.ndarray = None):
         """Train the model.
 
         Args:
-            X (pandas dataframe): input features.
+            X (pandas dataframe): inputs.
             y (numpy array): targets.
+            X_val (pandas dataframe): if set, instead of splitting validation set from the X, it
+                uses this X as validation set.
+            y_val (numpy array): if set, uses this as validation y.
 
         Returns:
             train_losses: the training losses of each optimization step.
             val_metrics: the validation losses of optimization under the `report_frequency`.
         """
+        # Split into train and val
+        if X_val is None:
+            X_train, X_val, y_train, y_val = train_test_split(
+                X, y, test_size=self.validation_size, random_state=self.seed)
+        else:
+            X_train, y_train = X, y
+
         # Data
         y_normalize = True if self.problem == 'regression' else False
         self.preprocessor = MyPreprocessor(
             cat_features=self.cat_features,
-            y_normalize=y_normalize,  # True if regression, False for classification
+            y_normalize=y_normalize, # True if regression, False for classification
             random_state=self.seed,
             quantile_transform=True,
             output_distribution=self.quantile_dist,
             quantile_noise=self.quantile_noise,
         )
 
-        self.preprocessor.fit(X, y)
-
-        # Split into train and val
-        X_train, X_valid, y_train, y_valid = train_test_split(
-            X, y, test_size=self.validation_size, random_state=self.seed)
+        self.preprocessor.fit(X_train, y_train)
 
         # Transform dataset
         X_train, y_train = self.preprocessor.transform(X_train, y_train)
-        X_valid, y_valid = self.preprocessor.transform(X_valid, y_valid)
+        X_val, y_val = self.preprocessor.transform(X_val, y_val)
 
         # Initialize the architecture
         choice_fn = EM15Temp(max_temp=1., min_temp=0.01, steps=self.anneal_steps)
@@ -210,16 +217,16 @@ class NodeGAMBase(object):
                 trainer.load_checkpoint(tag='avg')
 
                 if self.objective == 'negative_auc':
-                    err = trainer.evaluate_negative_auc(X_valid, y_valid, device=self.device,
+                    err = trainer.evaluate_negative_auc(X_val, y_val, device=self.device,
                                                         batch_size=self.batch_size * 2)
                 elif self.objective == 'error_rate':
                     err = trainer.evaluate_classification_error(
-                        X_valid, y_valid, device=self.device, batch_size=self.batch_size * 2)
+                        X_val, y_val, device=self.device, batch_size=self.batch_size * 2)
                 elif self.objective == 'ce_loss':
                     err = trainer.evaluate_ce_loss(
-                        X_valid, y_valid, device=self.device, batch_size=self.batch_size * 2)
+                        X_val, y_val, device=self.device, batch_size=self.batch_size * 2)
                 elif self.objective == 'mse':
-                    err = trainer.evaluate_mse(X_valid, y_valid, device=self.device,
+                    err = trainer.evaluate_mse(X_val, y_val, device=self.device,
                                                batch_size=self.batch_size * 2)
                     err *= (self.preprocessor.y_std ** 2)
 
