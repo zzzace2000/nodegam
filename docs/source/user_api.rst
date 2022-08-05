@@ -20,6 +20,14 @@ NodeGAM Packages
     :undoc-members:
     :show-inheritance:
 
+Data Preprocessor
+---------------------
+.. autoclass:: nodegam.mypreprocessor.MyPreprocessor
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+
 Utilities
 --------------
 .. autofunction:: nodegam.utils.average_GAM_dfs
