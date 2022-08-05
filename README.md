@@ -4,7 +4,7 @@ NodeGAM is an interpretable deep learning GAM model proposed in our ICLR 2022 pa
 [NODE GAM: Differentiable Generalized Additive Model for Interpretable Deep Learning](https://arxiv.org/abs/2106.01613).
 In short, it trains a GAM model by multi-layer differentiable trees to be accurate, interpretable, and 
 differentiable. See this [blog post](https://medium.com/@chkchang21/interpretable-deep-learning-models-for-tabular-data-neural-gams-500c6ecc0122) 
-for an intro, and our [documentation website](https://nodegam.readthedocs.io/en/latest/)!
+for an intro, and our [Documentation website](https://nodegam.readthedocs.io/en/latest/)!
 
 
 <img src="https://github.com/zzzace2000/nodegam/blob/main/resources/images/Fig1.png?raw=true" width=600px>
