@@ -2,11 +2,12 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import OrdinalEncoder, StandardScaler, QuantileTransformer
+from category_encoders import LeaveOneOutEncoder
+from sklearn.preprocessing import QuantileTransformer
 
 
 class MyPreprocessor:
-    def __init__(self, random_state=1377, cat_features=None, normalize=False,
+    def __init__(self, random_state=1377, cat_features=None,
                  y_normalize=False, quantile_transform=False,
                  output_distribution='normal', n_quantiles=2000,
                  quantile_noise=1e-3):
@@ -16,7 +17,6 @@ class MyPreprocessor:
             random_state: Global random seed for an experiment.
             cat_features: If passed in, it does the ordinal encoding for these features before other
                 input normalization like quantile transformation. Default: None.
-            normalize: standardize features by removing the mean and scaling to unit variance.
             y_normalize: If True, it standardizes the targets y by setting the mean and stdev to 0
                 and 1. Useful in the regression setting.
             quantile_transform: If True, transforms the features to follow a normal or uniform
@@ -41,7 +41,6 @@ class MyPreprocessor:
 
         self.random_state = random_state
         self.cat_features = cat_features
-        self.normalize = normalize
         self.y_normalize = y_normalize
         self.quantile_transform = quantile_transform
         self.output_distribution = output_distribution
@@ -52,31 +51,25 @@ class MyPreprocessor:
         self.y_mu, self.y_std = 0, 1
         self.feature_names = None
 
-    def fit(self, X, y=None):
+    def fit(self, X, y):
         """Fit the transformer.
 
         Args:
             X (pandas daraframe): Input data.
-            y (numpy array): Optional. If passed in, it will record the y_mean and y_std if
-                'y_normalize' is set to True.
+            y (numpy array): target y.
         """
         assert isinstance(X, pd.DataFrame), 'X is not a dataframe! %s' % type(X)
         self.feature_names = X.columns
 
         if self.cat_features is not None:
-            cat_encoder = MyOrdinalEncoder(cat_features=self.cat_features)
-            cat_encoder.fit(X)
-
+            cat_encoder = LeaveOneOutEncoder(cols=self.cat_features)
+            cat_encoder.fit(X, y)
             self.transformers.append(cat_encoder)
-            X = cat_encoder.transform(X)
-
-        if self.normalize:
-            scaler = StandardScaler(copy=False)
-            scaler.fit(X)
-            self.transformers.append(scaler)
 
         if self.quantile_transform:
             quantile_train = X.copy()
+            if self.cat_features is not None:
+                quantile_train = cat_encoder.transform(quantile_train)
 
             if self.quantile_noise:
                 r = np.random.RandomState(self.random_state)
@@ -135,46 +128,3 @@ class MyPreprocessor:
             y = y.astype(np.float32)
 
         return X, y
-
-
-class MyOrdinalEncoder:
-    def __init__(self, cat_features=None):
-        """My ordinal encoding that imputes the unseen category as the most frequent one.
-
-        Args:
-            cat_features: a list of column names to do ordinal encoding. If None, transform all.
-        """
-        self.cat_features = cat_features  # array of column names to encode
-        self.cat_to_int_map = {}
-
-    def fit(self, X):
-        if self.cat_features is None:
-            self.cat_features = X.columns
-
-        # Create a per-feature ordinal encoder
-        for c in self.cat_features:
-            tmp = X[c].astype('category').cat
-            self.cat_to_int_map[c] = pd.Series(range(len(tmp.categories)),
-                                               index=tmp.categories.values)
-        return self
-
-    def transform(self, X):
-        """Transforms columns of X specified in self.columns.
-
-        Args:
-            X (pandas datafranme): Input features.
-
-        Returns:
-            output (pandas dataframe): Transformed X.
-        """
-        output = X.copy()
-        for col in self.cat_features:
-            x_value = output[col]
-
-            not_in_category = (~x_value.isin(set(self.cat_to_int_map[col].index))).copy()
-            if not_in_category.any():
-                x_value.loc[not_in_category] = x_value.mode().iloc[0]
-            val = self.cat_to_int_map[col][x_value].values
-
-            output[col] = val
-        return output
